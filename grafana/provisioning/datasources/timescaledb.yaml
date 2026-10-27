@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: TimescaleDB-Telemetry
+    type: postgres
+    access: proxy
+    url: timescaledb:5432
+    user: postgres
+    database: telemetry
+    isDefault: true
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+    secureJsonData:
+      password: postgrespassword
