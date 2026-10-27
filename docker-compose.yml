@@ -1,0 +1,143 @@
+# Docker Compose for City-Wide Seismic IoT Telemetry Pipeline (Task Z8)
+# Launches the full stack: Ingest API, Processor, RabbitMQ, TimescaleDB, and Grafana.
+# Usage:
+#   docker compose up -d --build
+#   docker compose down -v
+
+services:
+  # 1. Message Broker (Priority & Dead-Letter Queues)
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: telemetry-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"      # AMQP protocol
+      - "15672:15672"    # Management UI (http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - telemetry-net
+
+  # 2. Time-Series Hypertable Database
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: telemetry-timescaledb
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: telemetry
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./scripts/init_timescaledb.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telemetry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - telemetry-net
+
+  # 3. High-Concurrency Ingestion API (FastAPI)
+  ingest-api:
+    build:
+      context: ./services/ingest-api
+      dockerfile: Dockerfile
+    container_name: telemetry-ingest-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      DEVICE_API_KEY: "dev-secret-key-123"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      QUEUE_LIVE: "telemetry.live"
+      QUEUE_BACKFILL: "telemetry.backfill"
+      QUEUE_DLQ: "telemetry.dlq"
+      MAX_INFLIGHT_REQUESTS: "2500"
+      RETRY_AFTER_SECONDS: "5"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - telemetry-net
+
+  # 4. Signal Processing & Correlation Worker (FFT & Deduplication)
+  processor:
+    build:
+      context: ./services/processor
+      dockerfile: Dockerfile
+    container_name: telemetry-processor
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      DATABASE_URL: "postgresql://postgres:postgrespassword@timescaledb:5432/telemetry"
+      QUEUE_LIVE: "telemetry.live"
+      QUEUE_BACKFILL: "telemetry.backfill"
+      QUEUE_DLQ: "telemetry.dlq"
+      METRICS_PORT: "8001"
+      CORRELATION_WINDOW_SECONDS: "3.0"
+      CORRELATION_MIN_NODES: "3"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - telemetry-net
+
+  # 5. Monitoring & Time-Series Visualization Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: telemetry-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"      # Web UI (http://localhost:3000)
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - telemetry-net
+
+networks:
+  telemetry-net:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
+  timescaledb_data:
+  grafana_data:
