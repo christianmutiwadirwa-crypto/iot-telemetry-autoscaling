@@ -1,0 +1,508 @@
+# Complete Cloud-Native Telemetry Pipeline Manifest for Azure AKS (Tasks Z23 & Z24)
+# Configured for Azure Load Balancer, HPA, RabbitMQ, and TimescaleDB
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: telemetry
+  labels:
+    environment: cloud-aks
+    app.kubernetes.io/part-of: telemetry-engine
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-config
+  namespace: telemetry
+data:
+  RABBITMQ_HOST: "rabbitmq-service.telemetry.svc.cluster.local"
+  RABBITMQ_PORT: "5672"
+  QUEUE_LIVE: "telemetry.live"
+  QUEUE_BACKFILL: "telemetry.backfill"
+  QUEUE_DLQ: "telemetry.dlq"
+  MAX_INFLIGHT_REQUESTS: "2500"
+  RETRY_AFTER_SECONDS: "5"
+  DATABASE_HOST: "timescaledb-service.telemetry.svc.cluster.local"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "telemetry"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: telemetry-secrets
+  namespace: telemetry
+type: Opaque
+stringData:
+  DEVICE_API_KEY: "dev-secret-key-123"
+  RABBITMQ_DEFAULT_USER: "guest"
+  RABBITMQ_DEFAULT_PASS: "guest"
+  RABBITMQ_URL: "amqp://guest:guest@rabbitmq-service.telemetry.svc.cluster.local:5672/"
+  POSTGRES_USER: "postgres"
+  POSTGRES_PASSWORD: "postgrespassword"
+  DATABASE_URL: "postgresql://postgres:postgrespassword@timescaledb-service.telemetry.svc.cluster.local:5432/telemetry"
+
+---
+# 1. Message Broker (RabbitMQ)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: telemetry
+  labels:
+    app: rabbitmq
+spec:
+  serviceName: rabbitmq-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management-alpine
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          envFrom:
+            - secretRef:
+                name: telemetry-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_running"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-service
+  namespace: telemetry
+  labels:
+    app: rabbitmq
+spec:
+  type: ClusterIP
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+
+---
+# 2. TimescaleDB Time-Series Hypertable Database
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: timescaledb-init-sql
+  namespace: telemetry
+data:
+  01-init.sql: |
+    CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+
+    CREATE TABLE IF NOT EXISTS telemetry_summaries (
+        id BIGSERIAL,
+        batch_id UUID NOT NULL,
+        device_id VARCHAR(32) NOT NULL,
+        sector VARCHAR(8) NOT NULL,
+        sent_at TIMESTAMPTZ NOT NULL,
+        is_backfill BOOLEAN NOT NULL DEFAULT FALSE,
+        interval_seconds REAL NOT NULL,
+        peak_acceleration_g REAL NOT NULL,
+        rms_acceleration_g REAL NOT NULL,
+        sample_count INTEGER NOT NULL,
+        temperature_c REAL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT pk_telemetry_summaries PRIMARY KEY (sent_at, batch_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_summaries_batch_id ON telemetry_summaries (batch_id);
+    CREATE INDEX IF NOT EXISTS idx_summaries_device_time ON telemetry_summaries (device_id, sent_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_summaries_sector_time ON telemetry_summaries (sector, sent_at DESC);
+
+    CREATE TABLE IF NOT EXISTS telemetry_waveforms (
+        id BIGSERIAL,
+        batch_id UUID NOT NULL,
+        device_id VARCHAR(32) NOT NULL,
+        sector VARCHAR(8) NOT NULL,
+        sent_at TIMESTAMPTZ NOT NULL,
+        is_backfill BOOLEAN NOT NULL DEFAULT FALSE,
+        sampling_rate_hz INTEGER NOT NULL DEFAULT 1000,
+        peak_acceleration_g REAL NOT NULL,
+        rms_acceleration_g REAL NOT NULL,
+        dominant_frequency_hz REAL NOT NULL,
+        spectral_energy REAL NOT NULL,
+        sample_count INTEGER NOT NULL,
+        samples_json JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT pk_telemetry_waveforms PRIMARY KEY (sent_at, batch_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_waveforms_batch_id ON telemetry_waveforms (batch_id);
+    CREATE INDEX IF NOT EXISTS idx_waveforms_device_time ON telemetry_waveforms (device_id, sent_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_waveforms_sector_time ON telemetry_waveforms (sector, sent_at DESC);
+
+    CREATE TABLE IF NOT EXISTS seismic_events (
+        id BIGSERIAL PRIMARY KEY,
+        detected_at TIMESTAMPTZ NOT NULL,
+        sector VARCHAR(8) NOT NULL,
+        triggering_nodes_count INTEGER NOT NULL,
+        max_peak_g REAL NOT NULL,
+        estimated_magnitude REAL NOT NULL,
+        description TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: timescaledb
+  namespace: telemetry
+  labels:
+    app: timescaledb
+spec:
+  serviceName: timescaledb-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: timescaledb
+  template:
+    metadata:
+      labels:
+        app: timescaledb
+    spec:
+      containers:
+        - name: timescaledb
+          image: timescale/timescaledb:latest-pg16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: telemetry
+          envFrom:
+            - secretRef:
+                name: telemetry-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "telemetry"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "telemetry"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init-sql
+          configMap:
+            name: timescaledb-init-sql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-service
+  namespace: telemetry
+  labels:
+    app: timescaledb
+spec:
+  type: ClusterIP
+  selector:
+    app: timescaledb
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+---
+# 3. High-Concurrency Ingest API Pods (HPA 2 - 10)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-api
+  namespace: telemetry
+  labels:
+    app: ingest-api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ingest-api
+  template:
+    metadata:
+      labels:
+        app: ingest-api
+    spec:
+      containers:
+        - name: ingest-api
+          image: python:3.12-slim
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              apt-get update && apt-get install -y git
+              git clone --branch feat/z-track-automation https://github.com/christianmutiwadirwa-crypto/iot-telemetry-autoscaling.git /app
+              cd /app/services/ingest-api
+              pip install --no-cache-dir -r requirements.txt
+              python -m uvicorn main:app --host 0.0.0.0 --port 8000
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8000"
+          envFrom:
+            - configMapRef:
+                name: telemetry-config
+            - secretRef:
+                name: telemetry-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+---
+# Public Load Balancer Service for Ingest API (Task Z24)
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingest-api-service
+  namespace: telemetry
+  labels:
+    app: ingest-api
+spec:
+  type: LoadBalancer
+  selector:
+    app: ingest-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+
+---
+# 4. Signal Processing & FFT Calculation Workers (HPA 2 - 10)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: processor
+  namespace: telemetry
+  labels:
+    app: processor
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: processor
+  template:
+    metadata:
+      labels:
+        app: processor
+    spec:
+      containers:
+        - name: processor
+          image: python:3.12-slim
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              apt-get update && apt-get install -y git
+              git clone --branch feat/z-track-automation https://github.com/christianmutiwadirwa-crypto/iot-telemetry-autoscaling.git /app
+              cd /app/services/processor
+              pip install --no-cache-dir -r requirements.txt
+              python main.py
+          ports:
+            - name: metrics
+              containerPort: 8001
+          env:
+            - name: METRICS_PORT
+              value: "8001"
+          envFrom:
+            - configMapRef:
+                name: telemetry-config
+            - secretRef:
+                name: telemetry-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: processor-service
+  namespace: telemetry
+  labels:
+    app: processor
+spec:
+  type: ClusterIP
+  selector:
+    app: processor
+  ports:
+    - name: metrics
+      port: 8001
+      targetPort: 8001
+
+---
+# 5. Horizontal Pod Autoscalers (Tasks L23 & L24)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingest-api-hpa
+  namespace: telemetry
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ingest-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 60
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: processor-hpa
+  namespace: telemetry
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: processor
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 60
