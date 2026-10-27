@@ -125,11 +125,18 @@ class ScenarioController:
     def get_status(self) -> Dict[str, Any]:
         """Provides status for web dashboard."""
         elapsed = time.time() - self.start_time if self.is_running else 0.0
+        current_desc = "Idle"
+        if self.is_running:
+            if 0 < self.current_step_index <= len(self.timeline):
+                current_desc = self.timeline[self.current_step_index - 1].get("description", "Executing scenario")
+            else:
+                current_desc = "Executing scenario"
         return {
             "name": self.scenario_name,
             "is_running": self.is_running,
             "elapsed_seconds": round(elapsed, 1),
             "current_step_index": self.current_step_index,
             "total_steps": len(self.timeline),
+            "current_description": current_desc,
             "timeline": self.timeline,
         }

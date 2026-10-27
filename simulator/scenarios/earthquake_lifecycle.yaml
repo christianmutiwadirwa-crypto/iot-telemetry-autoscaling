@@ -11,7 +11,7 @@ timeline:
   - at_seconds: 15
     action: "trigger_earthquake"
     magnitude: 3.8
-    epicenter_km: [-4.0, 4.0]
+    epicenter_km: [-6.2, 4.5]
     duration_s: 15.0
     description: "Phase 2: Localized Micro-Tremor in Sector C (Residential Hills)"
 
@@ -22,7 +22,7 @@ timeline:
   - at_seconds: 60
     action: "trigger_earthquake"
     magnitude: 6.8
-    epicenter_km: [0.0, 0.0]
+    epicenter_km: [0.0, 0.3]
     duration_s: 45.0
     description: "Phase 4: Major Earthquake Surge (M6.8 downtown) - 5,000 req/s HPA scale-out trigger"
 

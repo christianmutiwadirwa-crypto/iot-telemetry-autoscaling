@@ -27,6 +27,7 @@ from simulator.config import (
 )
 from simulator.virtual_device import VirtualSensorNode
 from simulator.waveform_generator import SeismicEvent
+from simulator.city_layout import get_city_layout
 
 logger = logging.getLogger(__name__)
 
@@ -77,30 +78,24 @@ class FleetManager:
         self._initialize_nodes()
 
     def _initialize_nodes(self):
-        """Constructs all 500 virtual stations distributed across Sectors A–E."""
-        for sector_id, info in SECTOR_INFO.items():
-            start_num, end_num = info["node_range"]
-            center_x, center_y = info["center_coords"]
-            radius = info["radius_km"]
-            amplification = info["soil_amplification"]
+        """Constructs all 500 virtual stations mapped to city layout infrastructure."""
+        layout = get_city_layout()
+        for s in layout["sensors"]:
+            node_id = s["id"]
+            sector_id = s["sector"]
+            amplification = SECTOR_INFO[sector_id]["soil_amplification"]
 
-            for num in range(start_num, end_num + 1):
-                node_id = f"node-{num:03d}"
-                # Distribute nodes randomly within sector radius
-                angle = random.uniform(0, 2 * math.pi)
-                r = radius * (random.random() ** 0.5)
-                x = center_x + r * math.cos(angle)
-                y = center_y + r * math.sin(angle)
-
-                node = VirtualSensorNode(
-                    node_id=node_id,
-                    sector=sector_id,
-                    coordinates_km=(round(x, 3), round(y, 3)),
-                    soil_amplification=amplification,
-                    api_key=self.api_key,
-                    jitter_enabled=self.jitter_enabled,
-                )
-                self.nodes[node_id] = node
+            node = VirtualSensorNode(
+                node_id=node_id,
+                sector=sector_id,
+                coordinates_km=(s["x"], s["y"]),
+                soil_amplification=amplification,
+                api_key=self.api_key,
+                jitter_enabled=self.jitter_enabled,
+                kind=s.get("kind", "ground_station"),
+                site=s.get("site", ""),
+            )
+            self.nodes[node_id] = node
 
         # Activate initial quota
         all_ids = list(self.nodes.keys())
@@ -129,7 +124,7 @@ class FleetManager:
         magnitude: float,
         epicenter_km: Tuple[float, float],
         duration_s: float = 30.0,
-    ):
+    ) -> SeismicEvent:
         """Initiate an earthquake shockwave propagating across the city."""
         sim_time = time.time() - self.sim_start_time
         self.active_event = SeismicEvent(
@@ -145,6 +140,7 @@ class FleetManager:
             epicenter_km[1],
             duration_s,
         )
+        return self.active_event
 
     def clear_active_event(self):
         """Immediately ends active seismic shaking and returns fleet to quiescent baseline."""
@@ -190,9 +186,14 @@ class FleetManager:
                 "status": status,
                 "coords": node.coordinates_km,
                 "buffer_len": len(node.offline_buffer),
+                "kind": node.kind,
+                "site": node.site,
             })
 
+        sim_now = round(time.time() - self.sim_start_time, 2)
         return {
+            "sim_time_s": sim_now,
+            "ingest_url": self.ingest_url,
             "target_fleet_size": self.target_node_count,
             "active_nodes_count": len(self.active_node_ids),
             "triggered_nodes_count": triggered_count,

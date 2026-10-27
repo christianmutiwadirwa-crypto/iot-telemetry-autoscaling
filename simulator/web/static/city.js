@@ -1,0 +1,914 @@
+/**
+ * Living City Canvas Map (MetroMap)
+ * High-performance interactive vector canvas rendering:
+ * - Meandering river, Kelvin reservoir, Kelvin Dam & 5 bridges
+ * - Highway networks (H7, Northern Expressway), ring roads, arterials, downtown grid & rail line
+ * - Detailed architectural structures (skyscrapers, quays, gantry cranes, container yards,
+ *   tank farm, cooling towers, hospitals, malls, arena, suburban houses)
+ * - ~2,000 trees & parks
+ * - Dynamic moving traffic (cars, freight train)
+ * - Seismic shockwave ripples (P-wave & S-wave propagation)
+ * - Interactive 500 sensors with LOD, hover inspect, and zoom/pan navigation.
+ */
+
+class MetroMap {
+    constructor(canvasId, options = {}) {
+        this.canvas = document.getElementById(canvasId);
+        if (!this.canvas) return;
+        this.ctx = this.canvas.getContext("2d");
+
+        this.onSelectStation = options.onSelectStation || (() => {});
+        this.onSetEpicenter = options.onSetEpicenter || (() => {});
+
+        // Data layers
+        this.layout = null;
+        this.sensors = [];
+        this.activeEvent = null;
+        this.selectedSensorId = "node-001";
+        this.hoveredSensor = null;
+
+        // Viewport transform (World coordinates in km: X [-18, 17.5], Y [-11.5, 11.5])
+        this.centerX = 0.0;
+        this.centerY = 0.0;
+        this.zoom = 1.0;
+        this.targetCenterX = 0.0;
+        this.targetCenterY = 0.0;
+        this.targetZoom = 1.0;
+
+        // Mouse interaction state
+        this.isDragging = false;
+        this.dragStartX = 0;
+        this.dragStartY = 0;
+        this.dragStartCenterX = 0;
+        this.dragStartCenterY = 0;
+        this.mouseX = 0;
+        this.mouseY = 0;
+
+        // Dynamic entities (traffic & trains)
+        this.vehicles = [];
+        this.train = { progress: 0.2, speed: 0.025 };
+        this.trafficInitialized = false;
+
+        this.simTimeS = 0.0;
+        this.lastFrameTime = performance.now();
+
+        this.initEvents();
+        this.resize();
+        window.addEventListener("resize", () => this.resize());
+        this.startRenderLoop();
+    }
+
+    setLayout(layout) {
+        this.layout = layout;
+        if (layout.sensors) {
+            this.sensors = layout.sensors.map(s => ({
+                ...s,
+                status: "quiescent",
+                buffer_len: 0,
+            }));
+        }
+        this.initTraffic();
+    }
+
+    updateSnapshot(snapshot) {
+        if (!snapshot) return;
+        if (snapshot.sim_time_s !== undefined) {
+            this.simTimeS = snapshot.sim_time_s;
+        }
+        this.activeEvent = snapshot.active_event || null;
+
+        // Update sensor states
+        if (snapshot.nodes && this.sensors.length > 0) {
+            const statusMap = new Map();
+            for (const n of snapshot.nodes) {
+                statusMap.set(n.id, n);
+            }
+            for (const s of this.sensors) {
+                const live = statusMap.get(s.id);
+                if (live) {
+                    s.status = live.status;
+                    s.buffer_len = live.buffer_len || 0;
+                }
+            }
+        }
+    }
+
+    initEvents() {
+        const c = this.canvas;
+
+        c.addEventListener("mousedown", (e) => {
+            if (e.button === 0) {
+                this.isDragging = true;
+                this.dragStartX = e.clientX;
+                this.dragStartY = e.clientY;
+                this.dragStartCenterX = this.centerX;
+                this.dragStartCenterY = this.centerY;
+            }
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            const rect = c.getBoundingClientRect();
+            this.mouseX = e.clientX - rect.left;
+            this.mouseY = e.clientY - rect.top;
+
+            if (this.isDragging) {
+                const dx = e.clientX - this.dragStartX;
+                const dy = e.clientY - this.dragStartY;
+                const scale = this.getKmToPixelRatio();
+                this.centerX = this.dragStartCenterX - dx / scale;
+                this.centerY = this.dragStartCenterY + dy / scale; // invert Y
+                this.targetCenterX = this.centerX;
+                this.targetCenterY = this.centerY;
+            } else {
+                this.checkHover(this.mouseX, this.mouseY);
+            }
+        });
+
+        window.addEventListener("mouseup", (e) => {
+            if (this.isDragging) {
+                const dist = Math.hypot(e.clientX - this.dragStartX, e.clientY - this.dragStartY);
+                this.isDragging = false;
+                if (dist < 4) {
+                    this.handleClick(e);
+                }
+            }
+        });
+
+        c.addEventListener("wheel", (e) => {
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.2 : 0.833;
+            const newZoom = Math.min(14.0, Math.max(0.7, this.targetZoom * factor));
+
+            // Zoom towards mouse position
+            const rect = c.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            const worldPos = this.screenToWorld(mx, my);
+
+            this.targetZoom = newZoom;
+            this.targetCenterX = worldPos.x - (worldPos.x - this.targetCenterX) / factor;
+            this.targetCenterY = worldPos.y - (worldPos.y - this.targetCenterY) / factor;
+        }, { passive: false });
+
+        c.addEventListener("dblclick", (e) => {
+            const rect = c.getBoundingClientRect();
+            const worldPos = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+            this.flyTo(worldPos.x, worldPos.y, Math.min(10.0, this.zoom * 1.8));
+        });
+    }
+
+    handleClick(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        // 1. Check if clicked a sensor
+        const clicked = this.findSensorAtScreen(mx, my, 12);
+        if (clicked) {
+            this.selectedSensorId = clicked.id;
+            this.onSelectStation(clicked);
+            return;
+        }
+
+        // 2. Otherwise clicked map to set earthquake epicenter
+        const worldPos = this.screenToWorld(mx, my);
+        this.onSetEpicenter(worldPos.x, worldPos.y);
+    }
+
+    checkHover(mx, my) {
+        const hovered = this.findSensorAtScreen(mx, my, 10);
+        if (hovered !== this.hoveredSensor) {
+            this.hoveredSensor = hovered;
+            this.canvas.style.cursor = hovered ? "pointer" : (this.isDragging ? "grabbing" : "crosshair");
+        }
+    }
+
+    findSensorAtScreen(sx, sy, tolerancePx = 10) {
+        if (!this.sensors) return null;
+        for (const s of this.sensors) {
+            const sc = this.worldToScreen(s.x, s.y);
+            const d = Math.hypot(sc.x - sx, sc.y - sy);
+            if (d <= tolerancePx) return s;
+        }
+        return null;
+    }
+
+    flyTo(x, y, zoom = 2.5) {
+        this.targetCenterX = x;
+        this.targetCenterY = y;
+        this.targetZoom = Math.min(12.0, Math.max(0.7, zoom));
+    }
+
+    zoomIn() {
+        this.targetZoom = Math.min(14.0, this.targetZoom * 1.4);
+    }
+
+    zoomOut() {
+        this.targetZoom = Math.max(0.7, this.targetZoom * 0.714);
+    }
+
+    resetView() {
+        this.targetCenterX = 0.0;
+        this.targetCenterY = 0.0;
+        this.targetZoom = 1.0;
+    }
+
+    resize() {
+        if (!this.canvas) return;
+        const rect = this.canvas.getBoundingClientRect();
+        this.dpr = window.devicePixelRatio || 1;
+        this.canvas.width = Math.max(300, Math.floor(rect.width * this.dpr));
+        this.canvas.height = Math.max(200, Math.floor(rect.height * this.dpr));
+        this.width = rect.width;
+        this.height = rect.height;
+    }
+
+    getKmToPixelRatio() {
+        // Base fit: fit 35.5 km width into canvas width
+        const baseFit = Math.min(this.width / 36.5, this.height / 24.0);
+        return baseFit * this.zoom;
+    }
+
+    worldToScreen(wx, wy) {
+        const scale = this.getKmToPixelRatio();
+        const sx = this.width / 2 + (wx - this.centerX) * scale;
+        const sy = this.height / 2 - (wy - this.centerY) * scale; // inverted Y
+        return { x: sx, y: sy };
+    }
+
+    screenToWorld(sx, sy) {
+        const scale = this.getKmToPixelRatio();
+        const wx = this.centerX + (sx - this.width / 2) / scale;
+        const wy = this.centerY - (sy - this.height / 2) / scale;
+        return { x: wx, y: wy };
+    }
+
+    initTraffic() {
+        if (this.trafficInitialized || !this.layout || !this.layout.roads) return;
+        this.vehicles = [];
+        const majorRoads = this.layout.roads.filter(r => r.type === "highway" || r.type === "arterial");
+
+        for (let i = 0; i < 45; i++) {
+            const road = majorRoads[i % majorRoads.length];
+            this.vehicles.push({
+                road: road,
+                progress: Math.random(),
+                speed: (0.015 + Math.random() * 0.02) * (Math.random() > 0.5 ? 1 : -1),
+                color: ["#cbd5e1", "#e2e8f0", "#94a3b8", "#f59e0b", "#38bdf8", "#ef4444"][i % 6],
+                type: i % 7 === 0 ? "bus" : "car",
+            });
+        }
+        this.trafficInitialized = true;
+    }
+
+    startRenderLoop() {
+        const loop = (timestamp) => {
+            const dt = Math.min(0.1, (timestamp - this.lastFrameTime) / 1000.0);
+            this.lastFrameTime = timestamp;
+
+            this.update(dt);
+            this.render();
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+
+    update(dt) {
+        // Smooth camera movement
+        this.centerX += (this.targetCenterX - this.centerX) * 0.12;
+        this.centerY += (this.targetCenterY - this.centerY) * 0.12;
+        this.zoom += (this.targetZoom - this.zoom) * 0.12;
+
+        // Check if earthquake shaking is active (causes cars to brake!)
+        const isQuake = !!this.activeEvent;
+
+        // Update vehicles
+        for (const v of this.vehicles) {
+            const currentSpeed = isQuake ? v.speed * 0.2 : v.speed;
+            v.progress += currentSpeed * dt;
+            if (v.progress > 1.0) v.progress -= 1.0;
+            if (v.progress < 0.0) v.progress += 1.0;
+        }
+
+        // Update train
+        this.train.progress += this.train.speed * dt * (isQuake ? 0.3 : 1.0);
+        if (this.train.progress > 1.0) this.train.progress -= 1.0;
+    }
+
+    render() {
+        if (!this.ctx || this.width <= 0 || this.height <= 0) return;
+        const ctx = this.ctx;
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+        // 1. Clear background ground
+        ctx.fillStyle = "#09101d";
+        ctx.fillRect(0, 0, this.width, this.height);
+
+        if (!this.layout) return;
+
+        // Subtle sector territory tints
+        this.renderSectorTints(ctx);
+
+        // 2. Parks & Woods
+        this.renderParks(ctx);
+
+        // 3. Roads & Highways & Rail
+        this.renderRoads(ctx);
+
+        // 4. Meandering River & Kelvin Reservoir
+        this.renderWater(ctx);
+
+        // 5. Kelvin Dam & Bridges
+        this.renderDamAndBridges(ctx);
+
+        // 6. Buildings & Infrastructure Structures (LOD aware)
+        this.renderStructures(ctx);
+
+        // 7. Trees (~2,000)
+        this.renderTrees(ctx);
+
+        // 8. Traffic (cars & trains)
+        this.renderTraffic(ctx);
+
+        // 9. Shockwave Propagation Waves
+        this.renderShockwaves(ctx);
+
+        // 10. Sensor Nodes (500)
+        this.renderSensors(ctx);
+
+        // 11. Landmark Labels
+        this.renderLabels(ctx);
+
+        // 12. Minimap & HUD Overlays
+        this.renderMinimap(ctx);
+        this.renderScaleBar(ctx);
+        this.renderTooltip(ctx);
+    }
+
+    renderSectorTints(ctx) {
+        if (!this.layout.sectors) return;
+        for (const sec of this.layout.sectors) {
+            const sc = this.worldToScreen(sec.x, sec.y);
+            const rPx = sec.radius_km * this.getKmToPixelRatio();
+            const grad = ctx.createRadialGradient(sc.x, sc.y, rPx * 0.2, sc.x, sc.y, rPx);
+            grad.addColorStop(0, `${sec.color}14`);
+            grad.addColorStop(0.8, `${sec.color}08`);
+            grad.addColorStop(1, "transparent");
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    renderParks(ctx) {
+        if (!this.layout.parks) return;
+        ctx.fillStyle = "rgba(16, 185, 129, 0.12)";
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.25)";
+        ctx.lineWidth = 1;
+
+        for (const p of this.layout.parks) {
+            const sc = this.worldToScreen(p.cx, p.cy);
+            const scale = this.getKmToPixelRatio();
+            const pw = p.w * scale;
+            const ph = p.h * scale;
+
+            ctx.save();
+            ctx.translate(sc.x, sc.y);
+            ctx.rotate(p.rot || 0);
+            ctx.beginPath();
+            ctx.roundRect(-pw / 2, -ph / 2, pw, ph, 8);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    renderRoads(ctx) {
+        if (!this.layout.roads) return;
+        const scale = this.getKmToPixelRatio();
+
+        for (const rd of this.layout.roads) {
+            if (rd.points.length < 2) continue;
+
+            const isRail = rd.type === "rail";
+            const isHwy = rd.type === "highway";
+            const isArt = rd.type === "arterial";
+            const isSt = rd.type === "street";
+
+            // LOD skip street grid at low zoom
+            if (isSt && this.zoom < 1.1) continue;
+
+            let wPx = isHwy ? Math.max(3, 0.08 * scale) : (isArt ? Math.max(2, 0.05 * scale) : Math.max(1, 0.03 * scale));
+            if (isRail) wPx = Math.max(2, 0.04 * scale);
+
+            ctx.beginPath();
+            for (let i = 0; i < rd.points.length; i++) {
+                const sc = this.worldToScreen(rd.points[i][0], rd.points[i][1]);
+                if (i === 0) ctx.moveTo(sc.x, sc.y);
+                else ctx.lineTo(sc.x, sc.y);
+            }
+
+            if (isRail) {
+                // Rail bed
+                ctx.strokeStyle = "#475569";
+                ctx.lineWidth = wPx;
+                ctx.setLineDash([]);
+                ctx.stroke();
+                // Rail ties
+                ctx.strokeStyle = "#cbd5e1";
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            } else if (isHwy) {
+                // Highway casing
+                ctx.strokeStyle = "#1e293b";
+                ctx.lineWidth = wPx + 2;
+                ctx.setLineDash([]);
+                ctx.stroke();
+                // Highway surface
+                ctx.strokeStyle = "#334155";
+                ctx.lineWidth = wPx;
+                ctx.stroke();
+                // Dashed center
+                if (this.zoom > 1.2) {
+                    ctx.strokeStyle = "rgba(251, 191, 36, 0.6)";
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([6, 6]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            } else {
+                ctx.strokeStyle = isArt ? "#1e293b" : "#172033";
+                ctx.lineWidth = wPx;
+                ctx.setLineDash([]);
+                ctx.stroke();
+            }
+        }
+    }
+
+    renderWater(ctx) {
+        const scale = this.getKmToPixelRatio();
+
+        // 1. Reservoir (Northwest)
+        if (this.layout.reservoir) {
+            const res = this.layout.reservoir;
+            const sc = this.worldToScreen(res.cx, res.cy);
+            ctx.save();
+            ctx.translate(sc.x, sc.y);
+            ctx.rotate(res.rot || 0);
+
+            ctx.beginPath();
+            ctx.ellipse(0, 0, res.rx * scale, res.ry * scale, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "#0c2847";
+            ctx.fill();
+            ctx.strokeStyle = "#1e4976";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 2. Meandering River
+        if (this.layout.river && this.layout.river.points) {
+            const pts = this.layout.river.points;
+            const riverW = (this.layout.river.width || 0.55) * scale;
+
+            ctx.beginPath();
+            for (let i = 0; i < pts.length; i++) {
+                const sc = this.worldToScreen(pts[i][0], pts[i][1]);
+                if (i === 0) ctx.moveTo(sc.x, sc.y);
+                else ctx.lineTo(sc.x, sc.y);
+            }
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+
+            // Deep water core
+            ctx.strokeStyle = "#081d33";
+            ctx.lineWidth = riverW + 4;
+            ctx.stroke();
+
+            // Water surface
+            ctx.strokeStyle = "#0d2b4d";
+            ctx.lineWidth = riverW;
+            ctx.stroke();
+
+            // Water reflection sheen
+            ctx.strokeStyle = "rgba(56, 189, 248, 0.15)";
+            ctx.lineWidth = riverW * 0.4;
+            ctx.stroke();
+        }
+    }
+
+    renderDamAndBridges(ctx) {
+        const scale = this.getKmToPixelRatio();
+
+        // Kelvin Dam
+        if (this.layout.dam) {
+            const dam = this.layout.dam;
+            const p1 = this.worldToScreen(dam.x1, dam.y1);
+            const p2 = this.worldToScreen(dam.x2, dam.y2);
+            const damW = Math.max(4, dam.width * scale);
+
+            // Dam concrete structure
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = "#94a3b8";
+            ctx.lineWidth = damW;
+            ctx.lineCap = "square";
+            ctx.stroke();
+
+            // Dam crest road
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = "#334155";
+            ctx.lineWidth = Math.max(2, damW * 0.4);
+            ctx.stroke();
+        }
+
+        // 5 Bridges
+        if (this.layout.bridges) {
+            for (const br of this.layout.bridges) {
+                const p1 = this.worldToScreen(br.x1, br.y1);
+                const p2 = this.worldToScreen(br.x2, br.y2);
+
+                // Deck
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.strokeStyle = "#cbd5e1";
+                ctx.lineWidth = Math.max(3, 0.08 * scale);
+                ctx.lineCap = "round";
+                ctx.stroke();
+
+                // Pier towers
+                const mx = (p1.x + p2.x) / 2;
+                const my = (p1.y + p2.y) / 2;
+                ctx.fillStyle = "#f59e0b";
+                ctx.beginPath();
+                ctx.arc(mx, my, Math.max(2.5, 0.04 * scale), 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    renderStructures(ctx) {
+        if (!this.layout.structures) return;
+        const scale = this.getKmToPixelRatio();
+
+        for (const s of this.layout.structures) {
+            // LOD pruning: small houses hidden when zoomed out
+            if (s.kind === "house_cluster" && this.zoom < 1.15) continue;
+            if (s.kind === "warehouse" && this.zoom < 0.9) continue;
+
+            const sc = this.worldToScreen(s.x, s.y);
+            const w = Math.max(3, s.w * scale);
+            const h = Math.max(3, s.h * scale);
+
+            ctx.save();
+            ctx.translate(sc.x, sc.y);
+
+            // Shading & shadow based on floors
+            if (s.floors && s.floors > 10) {
+                const shadowOff = Math.min(10, s.floors * 0.15 * (this.zoom * 0.8));
+                ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+                ctx.fillRect(-w / 2 + shadowOff, -h / 2 + shadowOff, w, h);
+            }
+
+            // Building body
+            ctx.fillStyle = s.color || "#475569";
+            ctx.fillRect(-w / 2, -h / 2, w, h);
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+            // Special architectural icons
+            if (s.kind === "skyscraper" && this.zoom > 1.8) {
+                // Helipad / Spire beacon
+                ctx.fillStyle = "#38bdf8";
+                ctx.beginPath();
+                ctx.arc(0, 0, Math.max(1.5, w * 0.15), 0, Math.PI * 2);
+                ctx.fill();
+            } else if (s.kind === "hospital") {
+                // Red Cross
+                ctx.fillStyle = "#ffffff";
+                const cSize = Math.max(2, w * 0.35);
+                ctx.fillRect(-cSize / 6, -cSize / 2, cSize / 3, cSize);
+                ctx.fillRect(-cSize / 2, -cSize / 6, cSize, cSize / 3);
+            } else if (s.kind === "crane") {
+                // Crane jib line
+                ctx.strokeStyle = "#f59e0b";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(w * 1.5, -h * 0.8);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+    }
+
+    renderTrees(ctx) {
+        if (!this.layout.trees || this.zoom < 1.1) return;
+        const scale = this.getKmToPixelRatio();
+
+        ctx.fillStyle = "rgba(16, 185, 129, 0.45)";
+        for (const t of this.layout.trees) {
+            const sc = this.worldToScreen(t[0], t[1]);
+            const rPx = Math.max(1.2, t[2] * scale);
+
+            // Screen frustum culling
+            if (sc.x < -10 || sc.x > this.width + 10 || sc.y < -10 || sc.y > this.height + 10) continue;
+
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    renderTraffic(ctx) {
+        const scale = this.getKmToPixelRatio();
+
+        // 1. Vehicles along roads
+        for (const v of this.vehicles) {
+            const pts = v.road.points;
+            if (!pts || pts.length < 2) continue;
+
+            // Compute coordinate along polyline
+            const totalSegs = pts.length - 1;
+            const fIdx = v.progress * totalSegs;
+            const seg = Math.min(totalSegs - 1, Math.floor(fIdx));
+            const t = fIdx - seg;
+
+            const p1 = pts[seg];
+            const p2 = pts[seg + 1];
+            const wx = p1[0] + t * (p2[0] - p1[0]);
+            const wy = p1[1] + t * (p2[1] - p1[1]);
+            const sc = this.worldToScreen(wx, wy);
+
+            ctx.fillStyle = v.color;
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, v.type === "bus" ? 3 : 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 2. Rail Train
+        const railRoad = this.layout.roads.find(r => r.type === "rail");
+        if (railRoad && railRoad.points) {
+            const pts = railRoad.points;
+            const totalSegs = pts.length - 1;
+            const fIdx = this.train.progress * totalSegs;
+            const seg = Math.min(totalSegs - 1, Math.floor(fIdx));
+            const t = fIdx - seg;
+            const p1 = pts[seg];
+            const p2 = pts[seg + 1];
+            const wx = p1[0] + t * (p2[0] - p1[0]);
+            const wy = p1[1] + t * (p2[1] - p1[1]);
+            const sc = this.worldToScreen(wx, wy);
+
+            // Train head & carriages
+            ctx.fillStyle = "#38bdf8";
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowColor = "#38bdf8";
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    renderShockwaves(ctx) {
+        if (!this.activeEvent) return;
+        const ev = this.activeEvent;
+        const epicenter = ev.epicenter || [0, 0];
+        const sc = this.worldToScreen(epicenter[0], epicenter[1]);
+        const scale = this.getKmToPixelRatio();
+
+        // Calculate wave front propagation distances
+        const age = Math.max(0.0, this.simTimeS - ev.start_time_s);
+        const pRadiusKm = age * 6.0; // P-wave @ 6 km/s
+        const sRadiusKm = age * 3.5; // S-wave @ 3.5 km/s
+
+        // 1. Epicenter Marker
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(sc.x, sc.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. Expanding P-wave (amber, precursor)
+        if (pRadiusKm > 0 && pRadiusKm < 35.0) {
+            const rPx = pRadiusKm * scale;
+            ctx.strokeStyle = "rgba(251, 191, 36, 0.4)";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // 3. Expanding S-wave (red, main shockwave burst)
+        if (sRadiusKm > 0 && sRadiusKm < 30.0) {
+            const rPx = sRadiusKm * scale;
+            ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";
+            ctx.lineWidth = 3;
+            ctx.shadowColor = "#ef4444";
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    renderSensors(ctx) {
+        if (!this.sensors) return;
+
+        for (const s of this.sensors) {
+            const sc = this.worldToScreen(s.x, s.y);
+
+            // Frustum cull
+            if (sc.x < -15 || sc.x > this.width + 15 || sc.y < -15 || sc.y > this.height + 15) continue;
+
+            const isSelected = s.id === this.selectedSensorId;
+            const isHovered = s === this.hoveredSensor;
+            const isShaking = s.status === "triggered";
+            const isBuffering = s.status === "buffering";
+
+            let color = "#10b981"; // quiescent emerald
+            if (isShaking) color = "#ef4444"; // shaking red
+            else if (isBuffering) color = "#f59e0b"; // link severed amber
+
+            const radius = isSelected ? 5.5 : (isHovered ? 4.5 : 3.0);
+
+            // Shaking shockwave pulse animation
+            if (isShaking) {
+                const pulse = (performance.now() % 800) / 800;
+                ctx.strokeStyle = `rgba(239, 68, 68, ${1.0 - pulse})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(sc.x, sc.y, radius + pulse * 12, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Buffering badge ring
+            if (isBuffering) {
+                ctx.strokeStyle = "#f59e0b";
+                ctx.lineWidth = 1;
+                ctx.setLineDash([2, 2]);
+                ctx.beginPath();
+                ctx.arc(sc.x, sc.y, radius + 3, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Sensor body
+            ctx.fillStyle = color;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = isShaking || isSelected ? 8 : 4;
+
+            if (s.kind === "dam" || s.kind === "bridge") {
+                // Diamond symbol for key structural health monitoring
+                ctx.beginPath();
+                ctx.moveTo(sc.x, sc.y - radius * 1.3);
+                ctx.lineTo(sc.x + radius * 1.3, sc.y);
+                ctx.lineTo(sc.x, sc.y + radius * 1.3);
+                ctx.lineTo(sc.x - radius * 1.3, sc.y);
+                ctx.closePath();
+                ctx.fill();
+            } else {
+                ctx.beginPath();
+                ctx.arc(sc.x, sc.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.shadowBlur = 0;
+
+            // Selected targeting reticle ring
+            if (isSelected) {
+                ctx.strokeStyle = "#ffffff";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(sc.x, sc.y, radius + 5, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+    }
+
+    renderLabels(ctx) {
+        if (!this.layout.labels) return;
+
+        for (const l of this.layout.labels) {
+            if (this.zoom < l.minZoom || this.zoom > l.maxZoom) continue;
+
+            const sc = this.worldToScreen(l.x, l.y);
+            const isSector = l.kind === "sector";
+
+            ctx.save();
+            ctx.font = isSector ? "600 13px Inter, sans-serif" : "500 11px Inter, sans-serif";
+            ctx.fillStyle = isSector ? "#94a3b8" : "rgba(226, 232, 240, 0.75)";
+            ctx.textAlign = "center";
+            ctx.shadowColor = "#000000";
+            ctx.shadowBlur = 4;
+            ctx.fillText(l.text, sc.x, sc.y);
+            ctx.restore();
+        }
+    }
+
+    renderMinimap(ctx) {
+        // Compact mini-map in bottom right corner
+        const mw = 120;
+        const mh = 75;
+        const pad = 16;
+        const x = this.width - mw - pad;
+        const y = this.height - mh - pad;
+
+        ctx.save();
+        ctx.fillStyle = "rgba(7, 13, 24, 0.85)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+        ctx.lineWidth = 1;
+        ctx.roundRect(x, y, mw, mh, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        // City outline in minimap
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
+        ctx.strokeRect(x + 4, y + 4, mw - 8, mh - 8);
+
+        // Current camera viewport frustum
+        const normX = (this.centerX + 18.0) / 35.5;
+        const normY = (11.5 - this.centerY) / 23.0;
+        const camX = x + 4 + normX * (mw - 8);
+        const camY = y + 4 + normY * (mh - 8);
+        const boxW = Math.max(8, (mw - 8) / this.zoom);
+        const boxH = Math.max(6, (mh - 8) / this.zoom);
+
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(camX - boxW / 2, camY - boxH / 2, boxW, boxH);
+        ctx.restore();
+    }
+
+    renderScaleBar(ctx) {
+        // Scale bar in bottom left
+        const scale = this.getKmToPixelRatio();
+        const kmWidth = 2.0; // 2 km bar
+        const barPx = kmWidth * scale;
+
+        const x = 20;
+        const y = this.height - 20;
+
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 4);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + barPx, y);
+        ctx.lineTo(x + barPx, y - 4);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.font = "10px Inter, sans-serif";
+        ctx.fillText("2 km", x + barPx / 2 - 10, y - 6);
+        ctx.restore();
+    }
+
+    renderTooltip(ctx) {
+        if (!this.hoveredSensor) return;
+        const s = this.hoveredSensor;
+        const sc = this.worldToScreen(s.x, s.y);
+
+        const text1 = `${s.id} • ${s.site}`;
+        const text2 = `Sector ${s.sector} • Status: ${s.status.toUpperCase()}`;
+
+        ctx.save();
+        ctx.font = "500 11px Inter, sans-serif";
+        const w = Math.max(ctx.measureText(text1).width, ctx.measureText(text2).width) + 16;
+        const h = 42;
+
+        let tx = sc.x + 12;
+        let ty = sc.y - h - 6;
+        if (tx + w > this.width) tx = sc.x - w - 12;
+        if (ty < 10) ty = sc.y + 16;
+
+        ctx.fillStyle = "rgba(10, 18, 32, 0.92)";
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+        ctx.lineWidth = 1;
+        ctx.roundRect(tx, ty, w, h, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(text1, tx + 8, ty + 16);
+        ctx.fillStyle = s.status === "triggered" ? "#ef4444" : (s.status === "buffering" ? "#f59e0b" : "#10b981");
+        ctx.fillText(text2, tx + 8, ty + 32);
+        ctx.restore();
+    }
+}
+
+window.MetroMap = MetroMap;
