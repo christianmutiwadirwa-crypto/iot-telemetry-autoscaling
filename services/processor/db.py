@@ -9,11 +9,22 @@ import json
 import logging
 from typing import Optional, Dict, Any, Set
 from uuid import UUID
+from datetime import datetime, timezone
 import asyncpg
 
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def parse_timestamp(val: Any) -> Any:
+    """Parses ISO timestamp string to timezone-aware datetime for asyncpg."""
+    if isinstance(val, str):
+        try:
+            return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.now(timezone.utc)
+    return val
 
 
 class DatabaseClient:
@@ -71,7 +82,7 @@ class DatabaseClient:
                     UUID(batch_id_str),
                     batch["device_id"],
                     batch["sector"],
-                    batch["sent_at"],
+                    parse_timestamp(batch["sent_at"]),
                     bool(batch.get("is_backfill", False)),
                     float(summary.get("interval_seconds", 60.0)),
                     float(summary.get("peak_acceleration_g", 0.0)),
@@ -116,7 +127,7 @@ class DatabaseClient:
                     UUID(batch_id_str),
                     batch["device_id"],
                     batch["sector"],
-                    batch["sent_at"],
+                    parse_timestamp(batch["sent_at"]),
                     bool(batch.get("is_backfill", False)),
                     int(waveform.get("sampling_rate_hz", 1000)),
                     float(analysis.get("peak_acceleration_g", 0.0)),
@@ -148,7 +159,7 @@ class DatabaseClient:
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     query,
-                    event["detected_at"],
+                    parse_timestamp(event["detected_at"]),
                     event["sector"],
                     event["triggering_nodes_count"],
                     event["max_peak_g"],
