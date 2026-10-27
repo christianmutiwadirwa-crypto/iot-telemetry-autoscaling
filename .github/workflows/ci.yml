@@ -1,0 +1,77 @@
+name: Continuous Integration & Image Build (Tasks Z17, Z18)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_INGEST: ghcr.io/${{ github.repository }}/ingest-api
+  IMAGE_PROCESSOR: ghcr.io/${{ github.repository }}/processor
+
+jobs:
+  # 1. Run Complete 33-Test Unit & Integration Suite (Task Z17)
+  test:
+    name: Run Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio pytest-aiohttp aiohttp aio-pika prometheus_client asyncpg fastapi uvicorn pydantic scipy numpy
+
+      - name: Execute Full Test Suite
+        run: |
+          python scripts/run_tests.py
+
+  # 2. Build & Push Docker Images to GitHub Container Registry (Task Z18)
+  build-and-push:
+    name: Build & Push Container Images
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Ingest API Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/ingest-api
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_INGEST }}:latest
+            ${{ env.IMAGE_INGEST }}:${{ github.sha }}
+
+      - name: Build & Push Processor Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/processor
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_PROCESSOR }}:latest
+            ${{ env.IMAGE_PROCESSOR }}:${{ github.sha }}
