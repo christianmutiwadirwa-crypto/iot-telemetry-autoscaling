@@ -1,0 +1,60 @@
+name: Deploy to AKS & Health-Check Rollback (Tasks Z20, Z21)
+
+on:
+  workflow_run:
+    workflows: ["Continuous Integration & Image Build (Tasks Z17, Z18)"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CLUSTER_NAME: telemetry-aks
+  RESOURCE_GROUP: telemetry-rg
+
+jobs:
+  deploy-to-aks:
+    name: Rolling Update & Health Probe Verification
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        if: env.AZURE_CREDENTIALS != ''
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS Context
+        if: env.AZURE_CREDENTIALS != ''
+        run: |
+          az aks get-credentials --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.CLUSTER_NAME }} --overwrite-existing
+
+      - name: Apply Kubernetes Manifests
+        if: env.AZURE_CREDENTIALS != ''
+        run: |
+          kubectl apply -k k8s/
+
+      - name: Verify Rollout Status (Zero-Downtime Check)
+        id: rollout
+        if: env.AZURE_CREDENTIALS != ''
+        run: |
+          echo "[+] Monitoring Ingest API rolling deployment..."
+          kubectl rollout status deployment/ingest-api -n telemetry --timeout=120s
+          
+          echo "[+] Monitoring Processor rolling deployment..."
+          kubectl rollout status deployment/processor -n telemetry --timeout=120s
+
+      - name: Automatic Rollback on Failed Health Probes (Task Z21)
+        if: failure() && steps.rollout.outcome == 'failure'
+        run: |
+          echo "[!] Rollout failed health checks. Triggering automatic rollback to previous stable release..."
+          kubectl rollout undo deployment/ingest-api -n telemetry
+          kubectl rollout undo deployment/processor -n telemetry
+          kubectl rollout status deployment/ingest-api -n telemetry --timeout=60s
+          kubectl rollout status deployment/processor -n telemetry --timeout=60s
+          echo "[✔] Automated rollback complete. Cluster health restored."
+          exit 1

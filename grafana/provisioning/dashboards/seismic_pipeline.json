@@ -1,0 +1,430 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Metropolitan Seismic Health Key Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5000 },
+              { "color": "red", "value": 20000 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS total_summaries FROM telemetry_summaries;",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Summary Batches",
+      "type": "stat"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1000 },
+              { "color": "red", "value": 5000 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS total_waveforms FROM telemetry_waveforms;",
+          "refId": "A"
+        }
+      ],
+      "title": "Raw Waveform Batches (High-Res)",
+      "type": "stat"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.15 }
+            ]
+          },
+          "unit": "accG"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(MAX(peak_acceleration_g), 0.0) AS max_pga FROM telemetry_waveforms;",
+          "refId": "A"
+        }
+      ],
+      "title": "City Peak Acceleration (PGA)",
+      "type": "stat"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS events_count FROM seismic_events;",
+          "refId": "A"
+        }
+      ],
+      "title": "Correlated Quake Events",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Ingestion Throughput & Waveform Activity",
+      "type": "row"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Batches / Sec",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('5 seconds', sent_at) AS time, count(*) / 5.0 AS \"Waveforms Rate (req/s)\" FROM telemetry_waveforms WHERE $__timeFilter(sent_at) GROUP BY 1 ORDER BY 1;",
+          "refId": "Waveforms"
+        },
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('5 seconds', sent_at) AS time, count(*) / 5.0 AS \"Summaries Rate (req/s)\" FROM telemetry_summaries WHERE $__timeFilter(sent_at) GROUP BY 1 ORDER BY 1;",
+          "refId": "Summaries"
+        }
+      ],
+      "title": "Live Ingestion Rate (Summaries vs Waveform Bursts)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Peak Acceleration (g)",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.05 }
+            ]
+          },
+          "unit": "accG"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('5 seconds', sent_at) AS time, sector, MAX(peak_acceleration_g) AS max_pga FROM telemetry_waveforms WHERE $__timeFilter(sent_at) GROUP BY 1, sector ORDER BY 1;",
+          "refId": "PGA_Sector"
+        }
+      ],
+      "title": "Ground Motion Peak Acceleration by Sector vs 0.05g Threshold",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "Priority Queue Routing & Multi-Node Event Detection",
+      "type": "row"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Batches Ingested",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "time_series",
+          "rawSql": "SELECT time_bucket('10 seconds', sent_at) AS time, CASE WHEN is_backfill THEN 'Backfill Reconnect Data' ELSE 'Live Telemetry' END AS stream_type, count(*) AS count FROM telemetry_summaries WHERE $__timeFilter(sent_at) GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "BackfillVsLive"
+        }
+      ],
+      "title": "Queue Separation (Live vs Post-Outage Backfill Ingestion)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "TimescaleDB-Telemetry",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 4.0 },
+              { "color": "red", "value": 6.0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 8,
+      "options": {
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "detected_at" }]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": "TimescaleDB-Telemetry",
+          "format": "table",
+          "rawSql": "SELECT detected_at, sector, triggering_nodes_count, ROUND(max_peak_g::numeric, 3) AS max_pga_g, ROUND(estimated_magnitude::numeric, 1) AS magnitude, description FROM seismic_events ORDER BY detected_at DESC LIMIT 50;",
+          "refId": "EventsLog"
+        }
+      ],
+      "title": "Multi-Node Correlated Earthquake Events Log",
+      "type": "table"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["iot", "seismic", "telemetry", "autoscaling"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m"],
+    "time_options": ["5m", "15m", "1h", "6h", "24h"]
+  },
+  "timezone": "browser",
+  "title": "City Seismic Telemetry & Autoscaling Pipeline",
+  "uid": "city-seismic-pipeline",
+  "version": 1
+}
