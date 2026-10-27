@@ -72,6 +72,7 @@ class FleetManager:
             "buffering_nodes": 0,
         }
         self._recent_requests_window: List[float] = []
+        self._latest_waveform_samples: List[float] = []
 
         self._initialize_nodes()
 
@@ -201,6 +202,13 @@ class FleetManager:
             "stats": self.stats,
             "jitter_enabled": self.jitter_enabled,
             "has_active_event": self.active_event is not None,
+            "active_event": {
+                "magnitude": self.active_event.magnitude,
+                "epicenter": self.active_event.epicenter_km,
+                "start_time_s": self.active_event.start_time_s,
+                "duration_s": self.active_event.duration_s,
+            } if self.active_event else None,
+            "latest_waveform": self._latest_waveform_samples[-60:] if self._latest_waveform_samples else [],
             "nodes": nodes_summary,
         }
 
@@ -209,6 +217,8 @@ class FleetManager:
         while self.is_running and node.node_id in self.active_node_ids and node.is_triggered:
             sim_time = time.time() - self.sim_start_time
             batch, peak_g = node.generate_waveform_batch(sim_time, self.active_event)
+            if batch.waveform and batch.waveform.samples:
+                self._latest_waveform_samples = [s.z for s in batch.waveform.samples[-40:]]
             
             if self.session:
                 res = await node.emit_batch(self.session, batch, self.ingest_url)
