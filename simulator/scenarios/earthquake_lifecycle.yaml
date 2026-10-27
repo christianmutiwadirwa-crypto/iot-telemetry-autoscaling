@@ -1,0 +1,41 @@
+name: "Metropolitan Seismic Lifecycle & Cloud Stress Scenario"
+version: "1.0"
+description: "Evaluates HPA scale-out, priority queues, link drop buffering, and self-healing."
+
+timeline:
+  - at_seconds: 0
+    action: "scale_fleet"
+    target_nodes: 500
+    description: "Phase 1: Baseline Fleet Quiescent Initialization (500 nodes, 1 summary/60s)"
+
+  - at_seconds: 15
+    action: "trigger_earthquake"
+    magnitude: 3.8
+    epicenter_km: [-4.0, 4.0]
+    duration_s: 15.0
+    description: "Phase 2: Localized Micro-Tremor in Sector C (Residential Hills)"
+
+  - at_seconds: 40
+    action: "clear_earthquake"
+    description: "Phase 3: Tremor Subsides - Fleet returns to baseline summary mode"
+
+  - at_seconds: 60
+    action: "trigger_earthquake"
+    magnitude: 6.8
+    epicenter_km: [0.0, 0.0]
+    duration_s: 45.0
+    description: "Phase 4: Major Earthquake Surge (M6.8 downtown) - 5,000 req/s HPA scale-out trigger"
+
+  - at_seconds: 90
+    action: "sever_network"
+    sector: "B"
+    description: "Phase 5: Telecom Outage - Cellular links down in Sector B (Industrial buffering)"
+
+  - at_seconds: 120
+    action: "restore_network"
+    sector: "B"
+    description: "Phase 6: Network Restored - Sector B dumps 50k backfill batches (Priority queue test)"
+
+  - at_seconds: 150
+    action: "clear_earthquake"
+    description: "Phase 7: All shaking ceases - HPA scale-in cooldown begins"

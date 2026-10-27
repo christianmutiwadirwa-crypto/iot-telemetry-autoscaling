@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>City-Wide Seismic IoT Fleet Controller</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="dashboard-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+        </div>
+        <div>
+          <h1>City Seismic Fleet Controller</h1>
+          <p class="subtitle">500-Node Metropolitan Structural Sensor Matrix & Cloud Auto-Scaling Engine</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <div class="status-badge" id="ws-status">
+          <span class="status-dot"></span>
+          <span id="ws-status-text">Connecting...</span>
+        </div>
+        <div class="target-badge">
+          <span class="badge-label">Ingest Target:</span>
+          <code id="ingest-target-url">http://localhost:8000</code>
+        </div>
+      </div>
+    </header>
+
+    <!-- Key Metrics Cards -->
+    <section class="metrics-grid">
+      <div class="metric-card highlight-card">
+        <div class="metric-label">Outgoing Traffic</div>
+        <div class="metric-value-row">
+          <span class="metric-value" id="val-rps">0.0</span>
+          <span class="metric-unit">req / sec</span>
+        </div>
+        <div class="metric-sub" id="sub-traffic">Quiescent baseline</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Active Sensors</div>
+        <div class="metric-value-row">
+          <span class="metric-value" id="val-active-nodes">500</span>
+          <span class="metric-unit">/ 500 nodes</span>
+        </div>
+        <div class="metric-sub">
+          <span class="text-green" id="count-quiescent">500 quiet</span> &bull; 
+          <span class="text-red" id="count-triggered">0 active quake</span> &bull; 
+          <span class="text-yellow" id="count-buffering">0 buffering</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Total Ingestion Batches</div>
+        <div class="metric-value-row">
+          <span class="metric-value" id="val-total-batches">0</span>
+          <span class="metric-unit">batches</span>
+        </div>
+        <div class="metric-sub" id="sub-batch-breakdown">0 summaries &bull; 0 waveforms</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Backlog & Ingestion Health</div>
+        <div class="metric-value-row">
+          <span class="metric-value" id="val-backfill">0</span>
+          <span class="metric-unit">backfill sent</span>
+        </div>
+        <div class="metric-sub">
+          <span id="sub-buffered-queue">0 queued</span> &bull; 
+          <span id="sub-429-count" class="text-red">0 rate-limits (429)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Controls & Scenario Injection -->
+    <section class="controls-container">
+      <div class="panel-header">
+        <h2>Scenario Injection & Edge Control</h2>
+        <div class="scenario-timeline-status" id="scenario-status-pill">
+          Manual Mode
+        </div>
+      </div>
+
+      <div class="control-actions">
+        <!-- Quick Seismic Triggers -->
+        <div class="action-group">
+          <div class="group-title">Seismic Shockwave Injection</div>
+          <div class="buttons-row">
+            <button class="btn btn-warning" id="btn-tremor">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              Trigger Tremor (M3.8)
+            </button>
+            <button class="btn btn-danger" id="btn-quake">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+              Major Quake Surge (M6.8)
+            </button>
+            <button class="btn btn-secondary" id="btn-clear-quake">
+              Reset to Baseline
+            </button>
+          </div>
+        </div>
+
+        <!-- Network Disruption & Priority Queue Tests -->
+        <div class="action-group">
+          <div class="group-title">Network Resilience & Priority Queue (Sector B)</div>
+          <div class="buttons-row">
+            <button class="btn btn-outline-warning" id="btn-cut-network">
+              Sever Sector B (Outage)
+            </button>
+            <button class="btn btn-outline-success" id="btn-restore-network">
+              Restore Link & Flush Backfill
+            </button>
+          </div>
+        </div>
+
+        <!-- Jitter & Automated Scenario -->
+        <div class="action-group">
+          <div class="group-title">Simulation Parameters & Automated Runner</div>
+          <div class="buttons-row">
+            <button class="btn btn-outline" id="btn-toggle-jitter">
+              Jitter: <span id="jitter-state-label" class="text-green font-bold">ENABLED</span>
+            </button>
+            <button class="btn btn-primary" id="btn-run-timeline">
+              Run 25-Min Automated Timeline
+            </button>
+            <button class="btn btn-danger hidden" id="btn-stop-timeline">
+              Stop Timeline
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fleet Dynamic Sizing Slider -->
+      <div class="fleet-slider-box">
+        <div class="slider-header">
+          <label for="fleet-scale-range">Active Fleet Scale Slider (Task L6):</label>
+          <span class="slider-badge" id="slider-nodes-val">500 Nodes</span>
+        </div>
+        <input type="range" id="fleet-scale-range" min="50" max="500" step="25" value="500">
+        <div class="slider-ticks">
+          <span>50 nodes (Dev test)</span>
+          <span>150 nodes</span>
+          <span>300 nodes</span>
+          <span>500 nodes (Full city matrix)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 500-Node Metropolitan Sensor Matrix -->
+    <section class="sensor-matrix-container">
+      <div class="matrix-header">
+        <div>
+          <h2>Metropolitan Sensor Matrix (500 Stations)</h2>
+          <p class="matrix-subtitle">Real-time status across 5 metropolitan sectors. Hover over any node to inspect telemetry.</p>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><span class="node-dot dot-quiescent"></span> Quiescent Summary (60s)</div>
+          <div class="legend-item"><span class="node-dot dot-triggered"></span> Seismic Surge (>0.05g)</div>
+          <div class="legend-item"><span class="node-dot dot-buffering"></span> Link Down (Buffering)</div>
+          <div class="legend-item"><span class="node-dot dot-inactive"></span> Inactive</div>
+        </div>
+      </div>
+
+      <!-- Tooltip for hovered node -->
+      <div id="node-tooltip" class="node-tooltip"></div>
+
+      <!-- Grid by Sectors -->
+      <div class="sectors-grid" id="sectors-container">
+        <!-- Sector blocks generated dynamically in JS -->
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
