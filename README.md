@@ -60,7 +60,8 @@ flowchart LR
 ├── docs/                             # Architecture, contracts, and case study docs
 │   ├── api_contract.md               # Ingest API specifications (endpoints, codes, headers)
 │   ├── case_study.md                 # Seismic monitoring scenario & problem statement
-│   └── city_simulation_dashboard.md  # 500-node virtual city dashboard specifications
+│   ├── city_simulation_dashboard.md  # 500-node virtual city dashboard specifications
+│   └── scenario_timeline.md          # Minute-by-minute load timeline & cluster sizing
 ├── schemas/                          # Data schemas & payload contracts
 │   └── telemetry_schema.json         # JSON Schema for summary and waveform batches
 ├── simulator/                        # 500-node Python asyncio simulator & web UI
