@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SeismicTelemetryBatch",
+  "description": "Standard payload emitted by virtual seismic sensor nodes to the Ingest API",
+  "type": "object",
+  "required": [
+    "device_id",
+    "batch_id",
+    "sector",
+    "sent_at",
+    "is_backfill",
+    "payload_type"
+  ],
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "pattern": "^node-[0-9]{3}$",
+      "description": "Unique identifier of the sensor node (e.g., node-042)"
+    },
+    "batch_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique UUIDv4 per batch to ensure idempotent ingestion"
+    },
+    "sector": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D", "E"],
+      "description": "City sector where the node is located"
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the batch was transmitted"
+    },
+    "is_backfill": {
+      "type": "boolean",
+      "description": "True if retransmitted after a network disconnection"
+    },
+    "payload_type": {
+      "type": "string",
+      "enum": ["summary", "waveform"],
+      "description": "Summary telemetry vs high-resolution event waveform"
+    },
+    "summary": {
+      "type": "object",
+      "description": "Periodic statistical reading emitted during quiescent baseline",
+      "properties": {
+        "interval_seconds": { "type": "number", "default": 60 },
+        "peak_acceleration_g": { "type": "number" },
+        "rms_acceleration_g": { "type": "number" },
+        "sample_count": { "type": "integer" },
+        "temperature_c": { "type": "number" }
+      },
+      "required": ["peak_acceleration_g", "rms_acceleration_g", "sample_count"]
+    },
+    "waveform": {
+      "type": "object",
+      "description": "High-frequency raw acceleration samples emitted during an event trigger",
+      "properties": {
+        "sampling_rate_hz": { "type": "integer", "default": 1000 },
+        "measured_at_start": { "type": "string", "format": "date-time" },
+        "samples": {
+          "type": "array",
+          "description": "List of tri-axial or z-axis acceleration readings in g",
+          "items": {
+            "type": "object",
+            "required": ["t_offset_ms", "z"],
+            "properties": {
+              "t_offset_ms": { "type": "integer" },
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "z": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["sampling_rate_hz", "samples"]
+    }
+  },
+  "oneOf": [
+    {
+      "properties": { "payload_type": { "const": "summary" } },
+      "required": ["summary"]
+    },
+    {
+      "properties": { "payload_type": { "const": "waveform" } },
+      "required": ["waveform"]
+    }
+  ]
+}

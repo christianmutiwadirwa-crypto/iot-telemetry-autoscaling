@@ -218,3 +218,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Environment variables & secrets
+.env
+.env.*
+*.env
+secrets/
+*.pem
+*.key
+*.cert
+
+# Kubernetes & Cloud Credentials
+*kubeconfig*
+*.kubeconfig
+azure-credentials.json
+.azure/
+
+# Project proposal, presentations, and binary office docs
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.pdf
