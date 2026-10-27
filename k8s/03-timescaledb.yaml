@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: timescaledb-init-sql
+  namespace: telemetry
+data:
+  01-init.sql: |
+    -- Enable TimescaleDB extension if available
+    CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+
+    -- Telemetry Summaries Table
+    CREATE TABLE IF NOT EXISTS telemetry_summaries (
+        id BIGSERIAL,
+        batch_id UUID NOT NULL,
+        device_id VARCHAR(32) NOT NULL,
+        sector VARCHAR(8) NOT NULL,
+        sent_at TIMESTAMPTZ NOT NULL,
+        is_backfill BOOLEAN NOT NULL DEFAULT FALSE,
+        interval_seconds REAL NOT NULL,
+        peak_acceleration_g REAL NOT NULL,
+        rms_acceleration_g REAL NOT NULL,
+        sample_count INTEGER NOT NULL,
+        temperature_c REAL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT pk_telemetry_summaries PRIMARY KEY (sent_at, batch_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_summaries_batch_id ON telemetry_summaries (batch_id);
+    CREATE INDEX IF NOT EXISTS idx_summaries_device_time ON telemetry_summaries (device_id, sent_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_summaries_sector_time ON telemetry_summaries (sector, sent_at DESC);
+
+    -- Waveforms Table
+    CREATE TABLE IF NOT EXISTS telemetry_waveforms (
+        id BIGSERIAL,
+        batch_id UUID NOT NULL,
+        device_id VARCHAR(32) NOT NULL,
+        sector VARCHAR(8) NOT NULL,
+        sent_at TIMESTAMPTZ NOT NULL,
+        is_backfill BOOLEAN NOT NULL DEFAULT FALSE,
+        sampling_rate_hz INTEGER NOT NULL DEFAULT 1000,
+        peak_acceleration_g REAL NOT NULL,
+        rms_acceleration_g REAL NOT NULL,
+        dominant_frequency_hz REAL NOT NULL,
+        spectral_energy REAL NOT NULL,
+        sample_count INTEGER NOT NULL,
+        samples_json JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT pk_telemetry_waveforms PRIMARY KEY (sent_at, batch_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_waveforms_batch_id ON telemetry_waveforms (batch_id);
+    CREATE INDEX IF NOT EXISTS idx_waveforms_device_time ON telemetry_waveforms (device_id, sent_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_waveforms_sector_time ON telemetry_waveforms (sector, sent_at DESC);
+
+    -- Seismic Events Table
+    CREATE TABLE IF NOT EXISTS seismic_events (
+        id BIGSERIAL PRIMARY KEY,
+        detected_at TIMESTAMPTZ NOT NULL,
+        sector VARCHAR(8) NOT NULL,
+        triggering_nodes_count INTEGER NOT NULL,
+        max_peak_g REAL NOT NULL,
+        estimated_magnitude REAL NOT NULL,
+        description TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: timescaledb
+  namespace: telemetry
+  labels:
+    app: timescaledb
+spec:
+  serviceName: timescaledb-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: timescaledb
+  template:
+    metadata:
+      labels:
+        app: timescaledb
+    spec:
+      containers:
+        - name: timescaledb
+          image: timescale/timescaledb:latest-pg16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: telemetry
+          envFrom:
+            - secretRef:
+                name: telemetry-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "telemetry"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "telemetry"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: timescaledb-data
+              mountPath: /var/lib/postgresql/data
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init-sql
+          configMap:
+            name: timescaledb-init-sql
+  volumeClaimTemplates:
+    - metadata:
+        name: timescaledb-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-service
+  namespace: telemetry
+  labels:
+    app: timescaledb
+spec:
+  type: ClusterIP
+  selector:
+    app: timescaledb
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
