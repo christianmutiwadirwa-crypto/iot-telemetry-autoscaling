@@ -45,7 +45,6 @@ az aks create \
   --name telemetry-aks \
   --node-count 2 \
   --node-vm-size Standard_B2s \
-  --os-disk-size-gb 32 \
   --generate-ssh-keys \
   --tier free
 

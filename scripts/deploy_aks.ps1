@@ -38,7 +38,6 @@ az aks create `
     --name $ClusterName `
     --node-count $NodeCount `
     --node-vm-size $VmSize `
-    --os-disk-size-gb 32 `
     --generate-ssh-keys `
     --tier free `
     --output table
