@@ -3,181 +3,180 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>City-Wide Seismic IoT Fleet Controller</title>
+  <title>Metropolitan Seismic Monitoring Command</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="app-container">
-    <!-- Header -->
-    <header class="dashboard-header">
-      <div class="brand">
-        <div class="brand-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-          </svg>
+  <div class="command-shell">
+    
+    <!-- Top Bar: Brand, Status, Target, Scenario Pill -->
+    <header class="command-header">
+      <div class="header-left">
+        <div class="header-brand">
+          <div class="pulse-marker"></div>
+          <h1>METRO SEISMIC COMMAND</h1>
         </div>
-        <div>
-          <h1>City Seismic Fleet Controller</h1>
-          <p class="subtitle">500-Node Metropolitan Structural Sensor Matrix & Cloud Auto-Scaling Engine</p>
+        <div class="status-pill" id="ws-status">
+          <span class="dot"></span>
+          <span id="ws-text">CONNECTING</span>
         </div>
       </div>
-      <div class="header-badges">
-        <div class="status-badge" id="ws-status">
-          <span class="status-dot"></span>
-          <span id="ws-status-text">Connecting...</span>
+
+      <div class="header-right">
+        <div class="pill-badge target-pill">
+          <span class="label">INGEST TARGET</span>
+          <span class="val">localhost:8000</span>
         </div>
-        <div class="target-badge">
-          <span class="badge-label">Ingest Target:</span>
-          <code id="ingest-target-url">http://localhost:8000</code>
+        <div class="pill-badge phase-pill" id="phase-pill">
+          <span class="label">SCENARIO</span>
+          <span class="val" id="phase-text">MANUAL</span>
         </div>
       </div>
     </header>
 
-    <!-- Key Metrics Cards -->
-    <section class="metrics-grid">
-      <div class="metric-card highlight-card">
-        <div class="metric-label">Outgoing Traffic</div>
-        <div class="metric-value-row">
-          <span class="metric-value" id="val-rps">0.0</span>
-          <span class="metric-unit">req / sec</span>
+    <!-- Top HUD: 4 Key Metrics Only (Clean, Scannable, Uncluttered) -->
+    <section class="hud-grid">
+      <div class="hud-card highlight-cyan">
+        <div class="hud-label">INGESTION THROUGHPUT</div>
+        <div class="hud-main">
+          <span class="hud-value" id="val-rps">0.0</span>
+          <span class="hud-unit">req / sec</span>
         </div>
-        <div class="metric-sub" id="sub-traffic">Quiescent baseline</div>
+        <div class="hud-sub" id="traffic-state-indicator">Baseline Quiescent (~8 req/s)</div>
       </div>
 
-      <div class="metric-card">
-        <div class="metric-label">Active Sensors</div>
-        <div class="metric-value-row">
-          <span class="metric-value" id="val-active-nodes">500</span>
-          <span class="metric-unit">/ 500 nodes</span>
+      <div class="hud-card">
+        <div class="hud-label">METROPOLITAN FLEET</div>
+        <div class="hud-main">
+          <span class="hud-value" id="val-active-nodes">500</span>
+          <span class="hud-unit">/ 500 Stations</span>
         </div>
-        <div class="metric-sub">
-          <span class="text-green" id="count-quiescent">500 quiet</span> &bull; 
-          <span class="text-red" id="count-triggered">0 active quake</span> &bull; 
-          <span class="text-yellow" id="count-buffering">0 buffering</span>
-        </div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">Total Ingestion Batches</div>
-        <div class="metric-value-row">
-          <span class="metric-value" id="val-total-batches">0</span>
-          <span class="metric-unit">batches</span>
-        </div>
-        <div class="metric-sub" id="sub-batch-breakdown">0 summaries &bull; 0 waveforms</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">Backlog & Ingestion Health</div>
-        <div class="metric-value-row">
-          <span class="metric-value" id="val-backfill">0</span>
-          <span class="metric-unit">backfill sent</span>
-        </div>
-        <div class="metric-sub">
-          <span id="sub-buffered-queue">0 queued</span> &bull; 
-          <span id="sub-429-count" class="text-red">0 rate-limits (429)</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Controls & Scenario Injection -->
-    <section class="controls-container">
-      <div class="panel-header">
-        <h2>Scenario Injection & Edge Control</h2>
-        <div class="scenario-timeline-status" id="scenario-status-pill">
-          Manual Mode
+        <div class="hud-sub">
+          <span class="text-green" id="count-quiet">500 Normal</span> &bull; 
+          <span class="text-red font-bold" id="count-triggered">0 Shaking</span> &bull; 
+          <span class="text-yellow" id="count-buffering">0 Buffering</span>
         </div>
       </div>
 
-      <div class="control-actions">
-        <!-- Quick Seismic Triggers -->
-        <div class="action-group">
-          <div class="group-title">Seismic Shockwave Injection</div>
-          <div class="buttons-row">
-            <button class="btn btn-warning" id="btn-tremor">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-              Trigger Tremor (M3.8)
-            </button>
-            <button class="btn btn-danger" id="btn-quake">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
-              Major Quake Surge (M6.8)
-            </button>
-            <button class="btn btn-secondary" id="btn-clear-quake">
-              Reset to Baseline
-            </button>
-          </div>
+      <div class="hud-card">
+        <div class="hud-label">INGESTED BATCHES</div>
+        <div class="hud-main">
+          <span class="hud-value" id="val-total-batches">0</span>
+          <span class="hud-unit">total</span>
         </div>
-
-        <!-- Network Disruption & Priority Queue Tests -->
-        <div class="action-group">
-          <div class="group-title">Network Resilience & Priority Queue (Sector B)</div>
-          <div class="buttons-row">
-            <button class="btn btn-outline-warning" id="btn-cut-network">
-              Sever Sector B (Outage)
-            </button>
-            <button class="btn btn-outline-success" id="btn-restore-network">
-              Restore Link & Flush Backfill
-            </button>
-          </div>
-        </div>
-
-        <!-- Jitter & Automated Scenario -->
-        <div class="action-group">
-          <div class="group-title">Simulation Parameters & Automated Runner</div>
-          <div class="buttons-row">
-            <button class="btn btn-outline" id="btn-toggle-jitter">
-              Jitter: <span id="jitter-state-label" class="text-green font-bold">ENABLED</span>
-            </button>
-            <button class="btn btn-primary" id="btn-run-timeline">
-              Run 25-Min Automated Timeline
-            </button>
-            <button class="btn btn-danger hidden" id="btn-stop-timeline">
-              Stop Timeline
-            </button>
-          </div>
-        </div>
+        <div class="hud-sub" id="val-batch-sub">0 summaries &bull; 0 waveforms</div>
       </div>
 
-      <!-- Fleet Dynamic Sizing Slider -->
-      <div class="fleet-slider-box">
-        <div class="slider-header">
-          <label for="fleet-scale-range">Active Fleet Scale Slider (Task L6):</label>
-          <span class="slider-badge" id="slider-nodes-val">500 Nodes</span>
+      <div class="hud-card">
+        <div class="hud-label">BACKLOG & BUFFER HEALTH</div>
+        <div class="hud-main">
+          <span class="hud-value" id="val-backfill-sent">0</span>
+          <span class="hud-unit">flushed</span>
         </div>
-        <input type="range" id="fleet-scale-range" min="50" max="500" step="25" value="500">
-        <div class="slider-ticks">
-          <span>50 nodes (Dev test)</span>
-          <span>150 nodes</span>
-          <span>300 nodes</span>
-          <span>500 nodes (Full city matrix)</span>
+        <div class="hud-sub">
+          <span id="val-queue-buffer">0 in memory</span> &bull; 
+          <span id="val-429-count" class="text-dim">0 rate limits</span>
         </div>
       </div>
     </section>
 
-    <!-- 500-Node Metropolitan Sensor Matrix -->
-    <section class="sensor-matrix-container">
-      <div class="matrix-header">
-        <div>
-          <h2>Metropolitan Sensor Matrix (500 Stations)</h2>
-          <p class="matrix-subtitle">Real-time status across 5 metropolitan sectors. Hover over any node to inspect telemetry.</p>
+    <!-- Main Section: Metropolitan Map with 5 Sites and Zoom Controls -->
+    <section class="map-viewport-section">
+      <div class="map-toolbar">
+        <div class="map-site-selector">
+          <span class="toolbar-title">SITE VIEW:</span>
+          <div class="site-nav-group" id="site-nav">
+            <button class="site-btn active" data-site="all">All City</button>
+            <button class="site-btn" data-site="A">Sector A &bull; Downtown</button>
+            <button class="site-btn" data-site="B">Sector B &bull; Industrial & Port</button>
+            <button class="site-btn" data-site="C">Sector C &bull; Residential</button>
+            <button class="site-btn" data-site="D">Sector D &bull; Transit</button>
+            <button class="site-btn" data-site="E">Sector E &bull; Suburbs</button>
+          </div>
         </div>
-        <div class="legend-row">
-          <div class="legend-item"><span class="node-dot dot-quiescent"></span> Quiescent Summary (60s)</div>
-          <div class="legend-item"><span class="node-dot dot-triggered"></span> Seismic Surge (>0.05g)</div>
-          <div class="legend-item"><span class="node-dot dot-buffering"></span> Link Down (Buffering)</div>
-          <div class="legend-item"><span class="node-dot dot-inactive"></span> Inactive</div>
+
+        <div class="map-legend">
+          <span class="legend-chip"><span class="chip-dot dot-green"></span> Quiescent</span>
+          <span class="legend-chip"><span class="chip-dot dot-red"></span> Quake Event (>0.05g)</span>
+          <span class="legend-chip"><span class="chip-dot dot-yellow"></span> Link Severed</span>
+          <button class="reset-view-btn" id="btn-reset-view">Reset Zoom</button>
         </div>
       </div>
 
-      <!-- Tooltip for hovered node -->
-      <div id="node-tooltip" class="node-tooltip"></div>
-
-      <!-- Grid by Sectors -->
-      <div class="sectors-grid" id="sectors-container">
-        <!-- Sector blocks generated dynamically in JS -->
+      <!-- Canvas Map Container -->
+      <div class="map-canvas-wrapper" id="canvas-wrapper">
+        <canvas id="metro-map-canvas"></canvas>
+        <div class="map-overlay-badge" id="map-site-label">ALL METROPOLITAN SECTORS</div>
+        <div class="map-hint">Click any site or coordinate to set epicenter &bull; Scroll to zoom</div>
+        <div class="node-popover" id="node-popover"></div>
       </div>
+    </section>
+
+    <!-- Bottom Section: Seismograph Oscilloscope + Quick Action Console -->
+    <section class="bottom-console-grid">
+      
+      <!-- Live Rolling Seismograph Oscilloscope -->
+      <div class="console-card seismograph-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="indicator-wave"></span>
+            <h3>LIVE SEISMOGRAPH &bull; ACCELERATION OSCILLOSCOPE</h3>
+          </div>
+          <div class="seismo-stat">
+            <span class="stat-tag">PEAK PGA:</span>
+            <span class="stat-num" id="seismo-peak-val">0.003 g</span>
+          </div>
+        </div>
+        <div class="seismograph-container">
+          <canvas id="seismograph-canvas"></canvas>
+          <div class="seismo-threshold-label">Threshold: 0.050 g</div>
+        </div>
+      </div>
+
+      <!-- Quick Action Console (Clean & Compact) -->
+      <div class="console-card action-card">
+        <div class="card-header">
+          <h3>SCENARIO & EDGE CONTROL</h3>
+          <span class="control-status" id="control-active-tag">SYSTEM READY</span>
+        </div>
+
+        <div class="console-controls">
+          <div class="button-strip">
+            <button class="act-btn btn-warning" id="btn-tremor">Tremor (M3.8)</button>
+            <button class="act-btn btn-danger" id="btn-quake">Major Quake (M6.8)</button>
+            <button class="act-btn btn-outline" id="btn-clear-quake">Reset Baseline</button>
+          </div>
+
+          <div class="button-strip">
+            <button class="act-btn btn-subtle-yellow" id="btn-cut-b">Sever Sector B</button>
+            <button class="act-btn btn-subtle-green" id="btn-restore-b">Restore & Flush</button>
+            <button class="act-btn btn-toggle" id="btn-jitter">
+              Jitter: <span id="jitter-txt" class="text-green">ON</span>
+            </button>
+          </div>
+
+          <div class="slider-strip">
+            <div class="slider-meta">
+              <span>Active Fleet Scale:</span>
+              <span class="slider-counter" id="slider-txt">500 Nodes</span>
+            </div>
+            <input type="range" id="fleet-slider" min="50" max="500" step="25" value="500">
+          </div>
+
+          <div class="scenario-auto-strip">
+            <button class="act-btn btn-primary full-width" id="btn-run-scenario">
+              ▶ Run 25-Min Automated Timeline
+            </button>
+            <button class="act-btn btn-danger full-width hidden" id="btn-stop-scenario">
+              ◼ Stop Automated Timeline
+            </button>
+          </div>
+        </div>
+      </div>
+
     </section>
   </div>
 
