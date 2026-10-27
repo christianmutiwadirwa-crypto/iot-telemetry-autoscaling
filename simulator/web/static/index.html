@@ -1,185 +1,215 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Metropolitan Seismic Monitoring Command</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro Seismic Command</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="command-shell">
-    
-    <!-- Top Bar: Brand, Status, Target, Scenario Pill -->
-    <header class="command-header">
-      <div class="header-left">
-        <div class="header-brand">
-          <div class="pulse-marker"></div>
-          <h1>METRO SEISMIC COMMAND</h1>
-        </div>
-        <div class="status-pill" id="ws-status">
-          <span class="dot"></span>
-          <span id="ws-text">CONNECTING</span>
-        </div>
-      </div>
-
-      <div class="header-right">
-        <div class="pill-badge target-pill">
-          <span class="label">INGEST TARGET</span>
-          <span class="val">localhost:8000</span>
-        </div>
-        <div class="pill-badge phase-pill" id="phase-pill">
-          <span class="label">SCENARIO</span>
-          <span class="val" id="phase-text">MANUAL</span>
-        </div>
-      </div>
-    </header>
-
-    <!-- Top HUD: 4 Key Metrics Only (Clean, Scannable, Uncluttered) -->
-    <section class="hud-grid">
-      <div class="hud-card highlight-cyan">
-        <div class="hud-label">INGESTION THROUGHPUT</div>
-        <div class="hud-main">
-          <span class="hud-value" id="val-rps">0.0</span>
-          <span class="hud-unit">req / sec</span>
-        </div>
-        <div class="hud-sub" id="traffic-state-indicator">Baseline Quiescent (~8 req/s)</div>
-      </div>
-
-      <div class="hud-card">
-        <div class="hud-label">METROPOLITAN FLEET</div>
-        <div class="hud-main">
-          <span class="hud-value" id="val-active-nodes">500</span>
-          <span class="hud-unit">/ 500 Stations</span>
-        </div>
-        <div class="hud-sub">
-          <span class="text-green" id="count-quiet">500 Normal</span> &bull; 
-          <span class="text-red font-bold" id="count-triggered">0 Shaking</span> &bull; 
-          <span class="text-yellow" id="count-buffering">0 Buffering</span>
-        </div>
-      </div>
-
-      <div class="hud-card">
-        <div class="hud-label">INGESTED BATCHES</div>
-        <div class="hud-main">
-          <span class="hud-value" id="val-total-batches">0</span>
-          <span class="hud-unit">total</span>
-        </div>
-        <div class="hud-sub" id="val-batch-sub">0 summaries &bull; 0 waveforms</div>
-      </div>
-
-      <div class="hud-card">
-        <div class="hud-label">BACKLOG & BUFFER HEALTH</div>
-        <div class="hud-main">
-          <span class="hud-value" id="val-backfill-sent">0</span>
-          <span class="hud-unit">flushed</span>
-        </div>
-        <div class="hud-sub">
-          <span id="val-queue-buffer">0 in memory</span> &bull; 
-          <span id="val-429-count" class="text-dim">0 rate limits</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Main Section: Metropolitan Map with 5 Sites and Zoom Controls -->
-    <section class="map-viewport-section">
-      <div class="map-toolbar">
-        <div class="map-site-selector">
-          <span class="toolbar-title">SITE VIEW:</span>
-          <div class="site-nav-group" id="site-nav">
-            <button class="site-btn active" data-site="all">All City</button>
-            <button class="site-btn" data-site="A">Sector A &bull; Downtown</button>
-            <button class="site-btn" data-site="B">Sector B &bull; Industrial & Port</button>
-            <button class="site-btn" data-site="C">Sector C &bull; Residential</button>
-            <button class="site-btn" data-site="D">Sector D &bull; Transit</button>
-            <button class="site-btn" data-site="E">Sector E &bull; Suburbs</button>
-          </div>
-        </div>
-
-        <div class="map-legend">
-          <span class="legend-chip"><span class="chip-dot dot-green"></span> Quiescent</span>
-          <span class="legend-chip"><span class="chip-dot dot-red"></span> Quake Event (>0.05g)</span>
-          <span class="legend-chip"><span class="chip-dot dot-yellow"></span> Link Severed</span>
-          <button class="reset-view-btn" id="btn-reset-view">Reset Zoom</button>
-        </div>
-      </div>
-
-      <!-- Canvas Map Container -->
-      <div class="map-canvas-wrapper" id="canvas-wrapper">
-        <canvas id="metro-map-canvas"></canvas>
-        <div class="map-overlay-badge" id="map-site-label">ALL METROPOLITAN SECTORS</div>
-        <div class="map-hint">Click any site or coordinate to set epicenter &bull; Scroll to zoom</div>
-        <div class="node-popover" id="node-popover"></div>
-      </div>
-    </section>
-
-    <!-- Bottom Section: Seismograph Oscilloscope + Quick Action Console -->
-    <section class="bottom-console-grid">
-      
-      <!-- Live Rolling Seismograph Oscilloscope -->
-      <div class="console-card seismograph-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="indicator-wave"></span>
-            <h3>LIVE SEISMOGRAPH &bull; ACCELERATION OSCILLOSCOPE</h3>
-          </div>
-          <div class="seismo-stat">
-            <span class="stat-tag">PEAK PGA:</span>
-            <span class="stat-num" id="seismo-peak-val">0.003 g</span>
-          </div>
-        </div>
-        <div class="seismograph-container">
-          <canvas id="seismograph-canvas"></canvas>
-          <div class="seismo-threshold-label">Threshold: 0.050 g</div>
-        </div>
-      </div>
-
-      <!-- Quick Action Console (Clean & Compact) -->
-      <div class="console-card action-card">
-        <div class="card-header">
-          <h3>SCENARIO & EDGE CONTROL</h3>
-          <span class="control-status" id="control-active-tag">SYSTEM READY</span>
-        </div>
-
-        <div class="console-controls">
-          <div class="button-strip">
-            <button class="act-btn btn-warning" id="btn-tremor">Tremor (M3.8)</button>
-            <button class="act-btn btn-danger" id="btn-quake">Major Quake (M6.8)</button>
-            <button class="act-btn btn-outline" id="btn-clear-quake">Reset Baseline</button>
-          </div>
-
-          <div class="button-strip">
-            <button class="act-btn btn-subtle-yellow" id="btn-cut-b">Sever Sector B</button>
-            <button class="act-btn btn-subtle-green" id="btn-restore-b">Restore & Flush</button>
-            <button class="act-btn btn-toggle" id="btn-jitter">
-              Jitter: <span id="jitter-txt" class="text-green">ON</span>
-            </button>
-          </div>
-
-          <div class="slider-strip">
-            <div class="slider-meta">
-              <span>Active Fleet Scale:</span>
-              <span class="slider-counter" id="slider-txt">500 Nodes</span>
+    <div class="command-container">
+        <!-- Header -->
+        <header class="command-header">
+            <div class="header-left">
+                <h1 class="header-title">Metro seismic command</h1>
+                <div class="header-pills">
+                    <span class="pill pill-live"><span class="pulse-dot"></span> Live simulated stream</span>
+                    <span class="pill pill-target" id="pill-ingest-target">Ingest target localhost:8000</span>
+                    <span class="pill pill-scenario" id="pill-scenario-phase">Scenario: quiescent baseline</span>
+                </div>
             </div>
-            <input type="range" id="fleet-slider" min="50" max="500" step="25" value="500">
-          </div>
+            <div class="header-right">
+                <button id="btn-sound-toggle" class="btn btn-outline sound-btn" title="Toggle seismic audio effects">
+                    <span class="sound-icon">🔊</span> <span id="sound-label">Sound on</span>
+                </button>
+            </div>
+        </header>
 
-          <div class="scenario-auto-strip">
-            <button class="act-btn btn-primary full-width" id="btn-run-scenario">
-              ▶ Run 25-Min Automated Timeline
-            </button>
-            <button class="act-btn btn-danger full-width hidden" id="btn-stop-scenario">
-              ◼ Stop Automated Timeline
-            </button>
-          </div>
-        </div>
-      </div>
+        <!-- KPI 4-Card Deck -->
+        <section class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Ingestion throughput</div>
+                <div class="kpi-metric"><span id="kpi-throughput">0.0</span> <span class="kpi-unit">req/s</span></div>
+                <div class="kpi-sub">Baseline about 8 req/s</div>
+            </div>
 
-    </section>
-  </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Metropolitan fleet</div>
+                <div class="kpi-metric"><span id="kpi-fleet-total">500</span> <span class="kpi-unit">stations</span></div>
+                <div class="kpi-sub">
+                    <span class="status-normal" id="kpi-normal-count">500 normal</span>
+                    <span class="status-shaking" id="kpi-shaking-count">0 shaking</span>
+                    <span class="status-buffering" id="kpi-buffering-count">0 buffering</span>
+                </div>
+            </div>
 
-  <script src="/static/app.js"></script>
+            <div class="kpi-card">
+                <div class="kpi-label">Ingested batches</div>
+                <div class="kpi-metric"><span id="kpi-batches-total">0</span> <span class="kpi-unit">total</span></div>
+                <div class="kpi-sub">
+                    <span id="kpi-summaries-count">0</span> summaries &nbsp; <span id="kpi-waveforms-count">0</span> waveforms
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">Backlog and buffer health</div>
+                <div class="kpi-metric"><span id="kpi-flushed-count">0</span> <span class="kpi-unit">flushed</span></div>
+                <div class="kpi-sub">
+                    <span id="kpi-buffered-count">0</span> in node memory &nbsp; <span id="kpi-rate-limits">0</span> rate limits
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Living City Map Section -->
+        <section class="map-section">
+            <div class="map-toolbar">
+                <div class="toolbar-left">
+                    <button id="btn-trigger-quake" class="btn btn-danger">Trigger earthquake</button>
+                    <div class="mag-control">
+                        <span class="mag-label">Magnitude</span>
+                        <input type="range" id="slider-mag" min="3.0" max="7.5" step="0.1" value="6.5">
+                        <span class="mag-val" id="val-mag">6.5</span>
+                    </div>
+                    <button id="btn-network-toggle" class="btn btn-outline">Sever link</button>
+                    <button id="btn-clear-quake" class="btn btn-outline">Clear event</button>
+                </div>
+
+                <div class="toolbar-center">
+                    <div class="sector-chips">
+                        <button class="chip active" data-zoom="all">All city</button>
+                        <button class="chip" data-zoom="A">Sector A: Downtown</button>
+                        <button class="chip" data-zoom="B">Sector B: Industrial & Port</button>
+                        <button class="chip" data-zoom="C">Sector C: Dam & Hills</button>
+                        <button class="chip" data-zoom="D">Sector D: Transit Mall</button>
+                        <button class="chip" data-zoom="E">Sector E: Suburbs</button>
+                    </div>
+                </div>
+
+                <div class="toolbar-right">
+                    <div class="map-legend">
+                        <span class="leg-item"><span class="leg-dot dot-green"></span> Quiescent</span>
+                        <span class="leg-item"><span class="leg-dot dot-red"></span> Shaking</span>
+                        <span class="leg-item"><span class="leg-dot dot-amber"></span> Link severed</span>
+                    </div>
+                    <div class="zoom-controls">
+                        <button id="btn-zoom-in" class="btn-icon" title="Zoom in">+</button>
+                        <button id="btn-zoom-out" class="btn-icon" title="Zoom out">−</button>
+                        <button id="btn-zoom-reset" class="btn-icon" title="Reset view">⟲</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="canvas-wrapper">
+                <canvas id="city-canvas"></canvas>
+            </div>
+            <div class="map-hint">Click the map to set the epicenter. Click a station to watch its waveform.</div>
+        </section>
+
+        <!-- Lower Grid: Seismograph & Cluster Telemetry -->
+        <section class="lower-grid">
+            <!-- Left: Seismograph -->
+            <div class="panel seismo-panel">
+                <div class="panel-header">
+                    <div class="panel-title-group">
+                        <h2 class="panel-title">Seismograph</h2>
+                        <span class="station-badge" id="seismo-station-id">node-001</span>
+                        <span class="station-site" id="seismo-site-name">Kelvin Financial Tower (72F)</span>
+                    </div>
+                    <div class="seismo-live-indicator"><span class="rec-dot"></span> LIVE 200 Hz</div>
+                </div>
+                <div class="seismo-canvas-container">
+                    <canvas id="seismo-canvas"></canvas>
+                </div>
+                <div class="seismo-footer">
+                    <div class="pga-container">
+                        Peak ground acceleration: <span class="pga-val" id="seismo-pga">0.003 g</span>
+                    </div>
+                    <div class="axis-legend">
+                        <span class="axis-pill pill-x">X Lateral</span>
+                        <span class="axis-pill pill-y">Y Transverse</span>
+                        <span class="axis-pill pill-z">Z Vertical</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Cluster Telemetry (AKS) -->
+            <div class="panel cluster-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">Cluster telemetry (AKS)</h2>
+                    <span class="hpa-badge" id="cluster-status-badge">stable</span>
+                </div>
+
+                <div class="cluster-body">
+                    <!-- Pod scaling -->
+                    <div class="cluster-row">
+                        <div class="row-header">
+                            <span class="row-label">Ingest and processor pods</span>
+                            <span class="row-val" id="cluster-pods-val">2 / 10</span>
+                        </div>
+                        <div class="pod-bar" id="pod-segments">
+                            <!-- 10 segments populated dynamically -->
+                            <div class="pod-seg active"></div>
+                            <div class="pod-seg active"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                        </div>
+                    </div>
+
+                    <!-- RabbitMQ Queue Depth -->
+                    <div class="cluster-row">
+                        <div class="row-header">
+                            <span class="row-label">RabbitMQ queue depth</span>
+                            <span class="row-val" id="cluster-queue-val">0</span>
+                        </div>
+                        <div class="meter-bar">
+                            <div class="meter-fill fill-amber" id="meter-queue" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- TimescaleDB Writes -->
+                    <div class="cluster-row">
+                        <div class="row-header">
+                            <span class="row-label">TimescaleDB writes</span>
+                            <span class="row-val"><span id="cluster-db-val">8</span> /s</span>
+                        </div>
+                        <div class="meter-bar">
+                            <div class="meter-fill fill-cyan" id="meter-db" style="width: 8%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Scenario & Fleet Controls -->
+                    <div class="cluster-controls-strip">
+                        <div class="ctrl-group">
+                            <button id="btn-scenario-toggle" class="btn btn-sm btn-outline">▶ Play scenario</button>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="chk-jitter" checked>
+                                <span class="slider-switch"></span>
+                                <span class="switch-label">60s Jitter</span>
+                            </label>
+                        </div>
+                        <div class="ctrl-group">
+                            <span class="fleet-slider-label">Fleet: <span id="fleet-size-val">500</span></span>
+                            <input type="range" id="slider-fleet" min="50" max="500" step="25" value="500">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/audio.js"></script>
+    <script src="/static/seismo.js"></script>
+    <script src="/static/city.js"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>

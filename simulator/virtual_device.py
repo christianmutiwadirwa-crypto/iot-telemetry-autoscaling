@@ -44,6 +44,8 @@ class VirtualSensorNode:
         soil_amplification: float = 1.0,
         api_key: str = DEFAULT_API_KEY,
         jitter_enabled: bool = True,
+        kind: str = "station",
+        site: str = "",
     ):
         self.node_id = node_id
         self.sector = sector
@@ -51,6 +53,8 @@ class VirtualSensorNode:
         self.soil_amplification = soil_amplification
         self.api_key = api_key
         self.jitter_enabled = jitter_enabled
+        self.kind = kind
+        self.site = site or f"Sector {sector} Station {node_id}"
 
         # Internal state
         self.is_triggered: bool = False
