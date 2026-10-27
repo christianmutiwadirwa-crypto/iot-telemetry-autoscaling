@@ -136,18 +136,33 @@ class MetroMap {
 
         c.addEventListener("wheel", (e) => {
             e.preventDefault();
-            const factor = e.deltaY < 0 ? 1.2 : 0.833;
-            const newZoom = Math.min(14.0, Math.max(0.7, this.targetZoom * factor));
-
-            // Zoom towards mouse position
             const rect = c.getBoundingClientRect();
             const mx = e.clientX - rect.left;
             const my = e.clientY - rect.top;
-            const worldPos = this.screenToWorld(mx, my);
 
+            const w = Math.max(300, this.width || 800);
+            const h = Math.max(200, this.height || 500);
+            const baseFit = Math.min(w / 36.5, h / 24.0);
+            const oldScale = baseFit * (this.zoom || 1.0);
+
+            // World coordinate under cursor right now
+            const wx = this.centerX + (mx - this.width / 2) / oldScale;
+            const wy = this.centerY - (my - this.height / 2) / oldScale;
+
+            const factor = e.deltaY < 0 ? 1.15 : 0.87;
+            const newZoom = Math.min(14.0, Math.max(0.7, (this.targetZoom || 1.0) * factor));
+            const newScale = baseFit * newZoom;
+
+            this.zoom = newZoom;
             this.targetZoom = newZoom;
-            this.targetCenterX = worldPos.x - (worldPos.x - this.targetCenterX) / factor;
-            this.targetCenterY = worldPos.y - (worldPos.y - this.targetCenterY) / factor;
+
+            // Shift center so the world coordinate (wx, wy) stays directly under cursor (mx, my)
+            this.centerX = wx - (mx - this.width / 2) / newScale;
+            this.centerY = wy + (my - this.height / 2) / newScale;
+
+            this.clampCenter();
+            this.targetCenterX = this.centerX;
+            this.targetCenterY = this.centerY;
         }, { passive: false });
 
         c.addEventListener("dblclick", (e) => {
@@ -155,6 +170,26 @@ class MetroMap {
             const worldPos = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
             this.flyTo(worldPos.x, worldPos.y, Math.min(10.0, this.zoom * 1.8));
         });
+    }
+
+    clampCenter() {
+        if (isNaN(this.centerX)) this.centerX = 0.0;
+        if (isNaN(this.centerY)) this.centerY = 0.0;
+        if (isNaN(this.targetCenterX)) this.targetCenterX = 0.0;
+        if (isNaN(this.targetCenterY)) this.targetCenterY = 0.0;
+        if (isNaN(this.zoom)) this.zoom = 1.0;
+        if (isNaN(this.targetZoom)) this.targetZoom = 1.0;
+
+        const minX = -16.0;
+        const maxX = 16.0;
+        const minY = -10.0;
+        const maxY = 10.0;
+        this.centerX = Math.max(minX, Math.min(maxX, this.centerX));
+        this.centerY = Math.max(minY, Math.min(maxY, this.centerY));
+        this.targetCenterX = Math.max(minX, Math.min(maxX, this.targetCenterX));
+        this.targetCenterY = Math.max(minY, Math.min(maxY, this.targetCenterY));
+        this.zoom = Math.max(0.7, Math.min(14.0, this.zoom));
+        this.targetZoom = Math.max(0.7, Math.min(14.0, this.targetZoom));
     }
 
     handleClick(e) {
@@ -197,17 +232,25 @@ class MetroMap {
         this.targetCenterX = x;
         this.targetCenterY = y;
         this.targetZoom = Math.min(12.0, Math.max(0.7, zoom));
+        this.clampCenter();
     }
 
     zoomIn() {
-        this.targetZoom = Math.min(14.0, this.targetZoom * 1.4);
+        this.targetZoom = Math.min(14.0, this.zoom * 1.35);
+        this.zoom = this.targetZoom;
+        this.clampCenter();
     }
 
     zoomOut() {
-        this.targetZoom = Math.max(0.7, this.targetZoom * 0.714);
+        this.targetZoom = Math.max(0.7, this.zoom * 0.74);
+        this.zoom = this.targetZoom;
+        this.clampCenter();
     }
 
     resetView() {
+        this.centerX = 0.0;
+        this.centerY = 0.0;
+        this.zoom = 1.0;
         this.targetCenterX = 0.0;
         this.targetCenterY = 0.0;
         this.targetZoom = 1.0;
@@ -225,8 +268,10 @@ class MetroMap {
 
     getKmToPixelRatio() {
         // Base fit: fit 35.5 km width into canvas width
-        const baseFit = Math.min(this.width / 36.5, this.height / 24.0);
-        return baseFit * this.zoom;
+        const w = Math.max(300, this.width || 800);
+        const h = Math.max(200, this.height || 500);
+        const baseFit = Math.min(w / 36.5, h / 24.0);
+        return baseFit * Math.max(0.7, this.zoom || 1.0);
     }
 
     worldToScreen(wx, wy) {
@@ -275,9 +320,10 @@ class MetroMap {
 
     update(dt) {
         // Smooth camera movement
-        this.centerX += (this.targetCenterX - this.centerX) * 0.12;
-        this.centerY += (this.targetCenterY - this.centerY) * 0.12;
-        this.zoom += (this.targetZoom - this.zoom) * 0.12;
+        this.centerX += (this.targetCenterX - this.centerX) * 0.15;
+        this.centerY += (this.targetCenterY - this.centerY) * 0.15;
+        this.zoom += (this.targetZoom - this.zoom) * 0.15;
+        this.clampCenter();
 
         // Check if earthquake shaking is active (causes cars to brake!)
         const isQuake = !!this.activeEvent;
@@ -854,11 +900,18 @@ class MetroMap {
     }
 
     renderScaleBar(ctx) {
-        // Scale bar in bottom left
-        const scale = this.getKmToPixelRatio();
-        const kmWidth = 2.0; // 2 km bar
-        const barPx = kmWidth * scale;
-
+        // Dynamic adaptive scale bar in bottom left
+        const scale = this.getKmToPixelRatio(); // pixels per km
+        const targetKm = 80 / scale; // aim for ~80px width
+        const niceValues = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0];
+        let kmVal = 2.0;
+        for (const v of niceValues) {
+            if (v >= targetKm * 0.7) {
+                kmVal = v;
+                break;
+            }
+        }
+        const barPx = Math.max(30, Math.min(160, kmVal * scale));
         const x = 20;
         const y = this.height - 20;
 
@@ -872,9 +925,10 @@ class MetroMap {
         ctx.lineTo(x + barPx, y - 4);
         ctx.stroke();
 
-        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
         ctx.font = "10px Inter, sans-serif";
-        ctx.fillText("2 km", x + barPx / 2 - 10, y - 6);
+        const label = kmVal < 1.0 ? `${Math.round(kmVal * 1000)} m` : `${kmVal} km`;
+        ctx.fillText(label, x + barPx / 2 - 12, y - 6);
         ctx.restore();
     }
 
