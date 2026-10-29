@@ -130,7 +130,7 @@ class FleetManager:
         magnitude: float,
         epicenter_km: Tuple[float, float],
         duration_s: float = 55.0,
-        early_warning_delay_s: float = 1.5,
+        early_warning_delay_s: float = 15.0,
     ) -> SeismicEvent:
         """
         Initiate an earthquake propagating physically outward:

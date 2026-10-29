@@ -720,8 +720,10 @@ class MetroMap {
         const age = Math.max(0.0, liveSimTime - ev.start_time_s);
         const pVel = ev.p_velocity_km_s || 2.8;
         const sVel = ev.s_velocity_km_s || 1.5;
-        const sDelay = ev.early_warning_delay_s !== undefined ? ev.early_warning_delay_s : 1.5;
-        const sAge = Math.max(0.0, age - sDelay);
+        const ewDelay = ev.early_warning_delay_s !== undefined ? ev.early_warning_delay_s : 15.0;
+        const countdownRem = Math.max(0.0, ewDelay - age);
+        const isEarlyWarning = countdownRem > 0.0;
+        const sAge = Math.max(0.0, age - ewDelay);
 
         const pRadiusKm = age * pVel; // Expanding P-wave front (Amber)
         const sRadiusKm = sAge * sVel; // Expanding S-wave front (Red)
@@ -732,8 +734,8 @@ class MetroMap {
         if (triggerRadiusKm < 35.0) {
             const trigPx = triggerRadiusKm * scale;
             ctx.save();
-            ctx.fillStyle = "rgba(239, 68, 68, 0.035)";
-            ctx.strokeStyle = "rgba(245, 158, 11, 0.45)";
+            ctx.fillStyle = isEarlyWarning ? "rgba(245, 158, 11, 0.04)" : "rgba(239, 68, 68, 0.035)";
+            ctx.strokeStyle = isEarlyWarning ? "rgba(251, 191, 36, 0.55)" : "rgba(245, 158, 11, 0.45)";
             ctx.lineWidth = 1.3;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
@@ -751,27 +753,32 @@ class MetroMap {
         // 1. Epicenter Marker with pulsing reticle
         const epiPulse = (performance.now() % 900) / 900;
         ctx.save();
-        ctx.fillStyle = "#ef4444";
-        ctx.shadowColor = "#ef4444";
+        ctx.fillStyle = isEarlyWarning ? "#f59e0b" : "#ef4444";
+        ctx.shadowColor = isEarlyWarning ? "#f59e0b" : "#ef4444";
         ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.arc(sc.x, sc.y, 6, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = `rgba(239, 68, 68, ${1.0 - epiPulse})`;
+        ctx.strokeStyle = isEarlyWarning ? `rgba(251, 191, 36, ${1.0 - epiPulse})` : `rgba(239, 68, 68, ${1.0 - epiPulse})`;
         ctx.lineWidth = 2.2;
         ctx.beginPath();
         ctx.arc(sc.x, sc.y, 8 + epiPulse * 22, 0, Math.PI * 2);
         ctx.stroke();
 
-        ctx.fillStyle = "#fca5a5";
         ctx.font = "600 11px JetBrains Mono, monospace";
         ctx.textAlign = "left";
-        ctx.fillText(`EPICENTER M${ev.magnitude.toFixed(1)} [T+${age.toFixed(1)}s]`, sc.x + 14, sc.y + 4);
+        if (isEarlyWarning) {
+            ctx.fillStyle = "#fde68a";
+            ctx.fillText(`T-${countdownRem.toFixed(1)}s EARLY WARNING`, sc.x + 14, sc.y + 4);
+        } else {
+            ctx.fillStyle = "#fca5a5";
+            ctx.fillText(`EPICENTER M${ev.magnitude.toFixed(1)} [T+${age.toFixed(1)}s]`, sc.x + 14, sc.y + 4);
+        }
         ctx.restore();
 
-        // 2. Trailing concentric reverberation waves behind leading S-wave
-        if (sAge > 0) {
+        // 2. Trailing concentric reverberation waves behind leading S-wave (after 15s impact)
+        if (!isEarlyWarning && sAge > 0) {
             const ripplePeriod = 2.2;
             const maxRipples = Math.min(10, Math.floor(Math.min(sAge, duration) / ripplePeriod));
             for (let i = 1; i <= maxRipples; i++) {
@@ -808,7 +815,7 @@ class MetroMap {
             }
         }
 
-        // 4. Leading P-wave Front (fast expanding Amber wave)
+        // 4. Leading P-wave Front (fast expanding Amber wave during and after Early Warning)
         if (pRadiusKm > 0 && pRadiusKm < maxWaveReachKm * 1.15) {
             const rPx = pRadiusKm * scale;
             const pAlpha = Math.max(0.18, 0.75 * (1.0 - pRadiusKm / (maxWaveReachKm * 1.2)));
@@ -824,15 +831,15 @@ class MetroMap {
             ctx.restore();
         }
 
-        // 5. Top-Center Map HUD Alert Banner
+        // 5. Top-Center Map HUD Alert Banner (15s Early Warning Countdown -> S-Wave Impact)
         ctx.save();
         const bannerW = 540;
         const bannerH = 40;
         const bx = (this.width - bannerW) / 2;
         const by = 14;
 
-        ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
-        ctx.strokeStyle = sRadiusKm < triggerRadiusKm ? "rgba(245, 158, 11, 0.85)" : "rgba(239, 68, 68, 0.85)";
+        ctx.fillStyle = isEarlyWarning ? "rgba(18, 14, 8, 0.92)" : "rgba(28, 8, 12, 0.92)";
+        ctx.strokeStyle = isEarlyWarning ? "rgba(245, 158, 11, 0.85)" : "rgba(239, 68, 68, 0.85)";
         ctx.lineWidth = 1.5;
         ctx.roundRect(bx, by, bannerW, bannerH, 6);
         ctx.fill();
@@ -840,22 +847,23 @@ class MetroMap {
 
         ctx.font = "600 12px JetBrains Mono, monospace";
         ctx.textAlign = "center";
-        if (sRadiusKm < triggerRadiusKm) {
+        if (isEarlyWarning) {
             ctx.fillStyle = "#fde68a";
             ctx.fillText(
-                `⚡ SEISMIC WAVE PROPAGATING (M${ev.magnitude.toFixed(1)}) • P-Wave ${pRadiusKm.toFixed(1)}km • S-Wave ${sRadiusKm.toFixed(1)}km [T+${age.toFixed(1)}s]`,
+                `⚠️ SEISMIC EARLY WARNING (M${ev.magnitude.toFixed(1)}) • SURFACE IMPACT IN ${countdownRem.toFixed(1)}s`,
                 bx + bannerW / 2,
                 by + 20
             );
-            const pct = Math.max(0, Math.min(1, sRadiusKm / Math.max(1, triggerRadiusKm)));
+            // Depleting progress bar across the 15s delay
+            const pct = Math.max(0, Math.min(1, countdownRem / ewDelay));
             ctx.fillStyle = "rgba(245, 158, 11, 0.25)";
-            ctx.fillRect(bx + 12, by + 29, bannerW - 24, 4);
+            ctx.fillRect(bx + 12, by + 28, bannerW - 24, 4);
             ctx.fillStyle = "#f59e0b";
-            ctx.fillRect(bx + 12, by + 29, (bannerW - 24) * pct, 4);
+            ctx.fillRect(bx + 12, by + 28, (bannerW - 24) * pct, 4);
         } else {
             ctx.fillStyle = "#fca5a5";
             ctx.fillText(
-                `🚨 FULL METROPOLITAN IMPACT (M${ev.magnitude.toFixed(1)}) • CLUSTER AUTOSCALING ENGAGED [T+${age.toFixed(1)}s]`,
+                `🚨 S-WAVE SURFACE IMPACT ACTIVE (M${ev.magnitude.toFixed(1)}) • SENSORS FIRING [T+${age.toFixed(1)}s]`,
                 bx + bannerW / 2,
                 by + 24
             );

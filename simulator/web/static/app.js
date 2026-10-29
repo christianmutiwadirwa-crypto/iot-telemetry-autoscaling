@@ -112,9 +112,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             const ev = snap.active_event;
             const det = snap.detecting_nodes_count || 0;
             const trig = snap.triggered_nodes_count || 0;
-            if (trig === 0 && det > 0) {
+            if (ev.is_early_warning) {
                 document.getElementById("pill-scenario-phase").textContent =
-                    `⚡ Wave Approaching: M${ev.magnitude.toFixed(1)} (${det} detecting P-wave)`;
+                    `⚠️ Early Warning: M${ev.magnitude.toFixed(1)} impact in ${ev.early_warning_remaining_s.toFixed(1)}s (${det} detecting P-wave)`;
             } else if (trig > 0) {
                 document.getElementById("pill-scenario-phase").textContent =
                     `🚨 Active Quake: M${ev.magnitude.toFixed(1)} (${trig} shaking, ${det} detecting)`;
@@ -254,7 +254,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }),
             });
             if (resp.ok && window.seismicAudio) {
-                window.seismicAudio.triggerEarlyWarning(magnitude, 1.5);
+                window.seismicAudio.triggerEarlyWarning(magnitude, 15.0);
             }
         } catch (e) {
             console.error("Failed to trigger earthquake:", e);

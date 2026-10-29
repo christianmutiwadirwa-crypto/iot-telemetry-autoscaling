@@ -93,14 +93,26 @@ class SeismicAudioEngine {
     /**
      * Trigger Early Warning audible siren pulses followed by destructive S-wave rumble.
      */
-    triggerEarlyWarning(magnitude, leadTimeSeconds = 1.5) {
+    triggerEarlyWarning(magnitude, leadTimeSeconds = 15.0) {
         if (!this.enabled || !this.ctx) return;
         this.clearWarningTimers();
 
         // Warning chime at rupture
-        this.playWarningPulse(880, 0.12);
+        this.playWarningPulse(880, 0.14);
 
-        // Schedule surface impact rumble at leadTimeSeconds
+        // Warning chimes during the 15-second countdown
+        const checkpoints = [5, 10, 12, 13, 14];
+        for (const sec of checkpoints) {
+            if (sec < leadTimeSeconds) {
+                const timer = setTimeout(() => {
+                    const freq = sec >= 12 ? 1046 : 880;
+                    this.playWarningPulse(freq, 0.12);
+                }, sec * 1000);
+                this.warningTimeouts.push(timer);
+            }
+        }
+
+        // Schedule surface impact rumble at leadTimeSeconds (15.0s)
         const impactTimer = setTimeout(() => {
             this.startEarthquake(magnitude);
         }, Math.max(0, leadTimeSeconds * 1000));

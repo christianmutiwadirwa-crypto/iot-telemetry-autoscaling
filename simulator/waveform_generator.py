@@ -29,7 +29,7 @@ class SeismicEvent:
         start_time_s: float,
         duration_s: float = 55.0,
         depth_km: float = 3.0,
-        early_warning_delay_s: float = 1.5,
+        early_warning_delay_s: float = 15.0,
     ):
         self.magnitude = magnitude
         self.epicenter_km = epicenter_km

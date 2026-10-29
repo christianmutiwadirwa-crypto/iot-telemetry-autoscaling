@@ -104,6 +104,7 @@ async def trigger_earthquake(req: EarthquakeRequest):
             magnitude=req.magnitude,
             epicenter_km=(req.epicenter_x, req.epicenter_y),
             duration_s=req.duration_s,
+            early_warning_delay_s=15.0,
         )
         return {
             "status": "triggered",
