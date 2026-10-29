@@ -18,6 +18,7 @@ class SeismicAudioEngine {
         this.noiseNode = null;
         this.filter = null;
         this.isRumbling = false;
+        this.warningTimeouts = [];
     }
 
     init() {
@@ -87,6 +88,51 @@ class SeismicAudioEngine {
     }
 
     /**
+     * Play 10-second Early Warning sonar pings before S-wave surface impact
+     */
+    triggerEarlyWarning(magnitude = 6.0, delaySeconds = 10.0) {
+        this.clearWarningTimers();
+        if (!this.enabled || !this.ctx) return;
+        if (this.ctx.state === "suspended") this.ctx.resume();
+
+        const steps = Math.floor(delaySeconds);
+        for (let i = 0; i < steps; i++) {
+            const rem = steps - i;
+            const tId = setTimeout(() => {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const beepOsc = this.ctx.createOscillator();
+                const beepGain = this.ctx.createGain();
+                beepOsc.type = "sine";
+                // Pitch rises on final 3 seconds for urgency
+                const freq = rem <= 3 ? 880 : 660;
+                beepOsc.frequency.setValueAtTime(freq, now);
+
+                beepGain.gain.setValueAtTime(0.18, now);
+                beepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+                beepOsc.connect(beepGain);
+                beepGain.connect(this.masterGain);
+                beepOsc.start(now);
+                beepOsc.stop(now + 0.18);
+            }, i * 1000);
+            this.warningTimeouts.push(tId);
+        }
+
+        const impactTimer = setTimeout(() => {
+            this.triggerEarthquake(magnitude);
+        }, delaySeconds * 1000);
+        this.warningTimeouts.push(impactTimer);
+    }
+
+    clearWarningTimers() {
+        if (this.warningTimeouts && this.warningTimeouts.length > 0) {
+            for (const t of this.warningTimeouts) clearTimeout(t);
+            this.warningTimeouts = [];
+        }
+    }
+
+    /**
      * Trigger shockwave arrival impact & start rumble
      * @param {number} magnitude Richter magnitude (3.0 - 7.5)
      */
@@ -135,6 +181,7 @@ class SeismicAudioEngine {
     }
 
     stopEarthquake() {
+        this.clearWarningTimers();
         if (!this.ctx || !this.isRumbling) return;
         const now = this.ctx.currentTime;
         this.rumbleGain.gain.cancelScheduledValues(now);

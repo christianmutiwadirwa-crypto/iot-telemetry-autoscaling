@@ -185,4 +185,4 @@ async def metrics():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, log_level="info")
+    uvicorn.run(app, host=settings.HOST, port=settings.PORT, log_level="info")

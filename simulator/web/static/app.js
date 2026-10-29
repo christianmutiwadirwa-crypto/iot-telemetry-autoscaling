@@ -1,62 +1,49 @@
 /**
- * Application Orchestrator & Telemetry Stream Manager
- * Connects UI controls, WebSocket streaming, MetroMap, Seismograph, and Audio.
+ * Metro Seismic Command Dashboard Application
+ * Connects UI widgets, WebSockets, Living City Canvas, and Seismograph.
  */
 
 document.addEventListener("DOMContentLoaded", async () => {
-    // 1. Initialize Seismograph
-    const seismo = new Seismograph("seismo-canvas");
+    // 1. Initialize Subsystems
+    const metroMap = new MetroMap("city-canvas", {
+        onSelectStation: (sensor) => {
+            seismo.selectStation(sensor.id, sensor.site);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "select", node_id: sensor.id }));
+            }
+        },
+        onSetEpicenter: (x, y) => {
+            currentEpicenter = [x, y];
+            triggerEarthquake(parseFloat(document.getElementById("slider-mag").value) || 6.5, currentEpicenter);
+        },
+    });
 
-    // State
-    let currentEpicenter = [0.0, 0.3];
+    const seismo = new Seismograph("seismo-canvas");
+    window.seismicAudio = new SeismicAudio();
+
+    let currentEpicenter = [0.0, 0.0];
     let isSectorBCut = false;
     let isScenarioPlaying = false;
     let ws = null;
     let wsRetryTimeout = null;
 
-    // 2. Initialize MetroMap
-    const metroMap = new MetroMap("city-canvas", {
-        onSelectStation: (sensor) => {
-            seismo.setStation(sensor.id, sensor.site, sensor.sector);
-            document.getElementById("seismo-station-id").textContent = sensor.id;
-            document.getElementById("seismo-site-name").textContent = sensor.site || `Sector ${sensor.sector}`;
-
-            // Send subscription update over WebSocket
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: "select", node_id: sensor.id }));
-            }
-        },
-        onSetEpicenter: (wx, wy) => {
-            const clampedX = Math.max(-17.5, Math.min(17.0, wx));
-            const clampedY = Math.max(-11.0, Math.min(11.0, wy));
-            currentEpicenter = [Math.round(clampedX * 10) / 10, Math.round(clampedY * 10) / 10];
-            const sliderEl = document.getElementById("slider-mag");
-            const mag = parseFloat(sliderEl.value) || 6.5;
-            triggerEarthquake(mag, currentEpicenter);
-        },
-    });
-
-    // Fetch and apply city layout
+    // 2. Load Geography & Layout
     try {
-        const resp = await fetch("/api/city/layout");
-        if (resp.ok) {
-            const layout = await resp.json();
-            metroMap.setLayout(layout);
-        }
+        const layoutResp = await fetch("/api/city/layout");
+        const layout = await layoutResp.json();
+        metroMap.setLayout(layout);
     } catch (e) {
         console.error("Failed to load city layout:", e);
     }
 
-    // 3. Audio Controller
-    const btnSound = document.getElementById("btn-sound-toggle");
-    const soundLabel = document.getElementById("sound-label");
-    let soundEnabled = false;
-
-    btnSound.addEventListener("click", () => {
-        soundEnabled = !soundEnabled;
-        window.seismicAudio.setEnabled(soundEnabled);
-        btnSound.classList.toggle("active", soundEnabled);
-        soundLabel.textContent = soundEnabled ? "Sound on" : "Sound muted";
+    // 3. Audio Toggle
+    const soundBtn = document.getElementById("btn-sound-toggle");
+    soundBtn.addEventListener("click", () => {
+        const enabled = window.seismicAudio.toggle();
+        soundBtn.classList.toggle("btn-outline", !enabled);
+        soundBtn.classList.toggle("btn-active", enabled);
+        document.getElementById("sound-label").textContent = enabled ? "Sound on" : "Sound off";
+        soundBtn.querySelector(".sound-icon").textContent = enabled ? "🔊" : "🔇";
     });
 
     // 4. WebSocket Streaming Connection
@@ -69,7 +56,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         ws.onopen = () => {
             console.log("WebSocket telemetry stream connected.");
-            // Subscribe to current station
             if (seismo.currentStationId) {
                 ws.send(JSON.stringify({ type: "select", node_id: seismo.currentStationId }));
             }
@@ -79,14 +65,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             try {
                 const msg = JSON.parse(event.data);
                 if (msg.type === "wave") {
-                    // Fast wave packet (10 Hz)
                     seismo.pushData(msg.x || [], msg.y || [], msg.z || [], msg.peak_g || 0.0);
                     document.getElementById("seismo-pga").textContent = `${(msg.peak_g || 0.0).toFixed(3)} g`;
                     if (window.seismicAudio) {
                         window.seismicAudio.updateShakeLevel(msg.peak_g || 0.0);
                     }
                 } else if (msg.type === "snapshot" && msg.data) {
-                    // Full snapshot packet (2 Hz)
                     handleSnapshot(msg.data);
                 }
             } catch (err) {
@@ -113,12 +97,28 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (snap.ingest_url) {
             document.getElementById("pill-ingest-target").textContent = `Ingest target ${snap.ingest_url.replace("http://", "").replace("/api/v1/telemetry", "")}`;
         }
-        if (snap.scenario) {
+        if (snap.active_event) {
+            const ev = snap.active_event;
+            const det = snap.detecting_nodes_count || 0;
+            const trig = snap.triggered_nodes_count || 0;
+            if (trig === 0 && det > 0) {
+                document.getElementById("pill-scenario-phase").textContent =
+                    `⚡ Wave Approaching: M${ev.magnitude.toFixed(1)} (${det} detecting P-wave)`;
+            } else if (trig > 0) {
+                document.getElementById("pill-scenario-phase").textContent =
+                    `🚨 Active Quake: M${ev.magnitude.toFixed(1)} (${trig} shaking, ${det} detecting)`;
+            } else {
+                document.getElementById("pill-scenario-phase").textContent =
+                    `⚡ Rupture active: M${ev.magnitude.toFixed(1)}`;
+            }
+        } else if (snap.scenario) {
             const sc = snap.scenario;
             isScenarioPlaying = sc.is_running;
             const desc = sc.current_description || (sc.is_running ? "Scenario active" : "quiescent baseline");
             document.getElementById("pill-scenario-phase").textContent = `Scenario: ${desc}`;
             document.getElementById("btn-scenario-toggle").textContent = sc.is_running ? "⏹ Stop scenario" : "▶ Play scenario";
+        } else {
+            document.getElementById("pill-scenario-phase").textContent = "Scenario: quiescent baseline";
         }
 
         // Top 4 KPI Cards
@@ -127,11 +127,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const totalActive = snap.active_nodes_count || 500;
         const shaking = snap.triggered_nodes_count || 0;
+        const detecting = snap.detecting_nodes_count || 0;
         const buffering = snap.buffering_nodes_count || 0;
-        const normal = Math.max(0, totalActive - shaking - buffering);
+        const normal = Math.max(0, totalActive - shaking - detecting - buffering);
 
         document.getElementById("kpi-fleet-total").textContent = totalActive;
         document.getElementById("kpi-normal-count").textContent = `${normal} normal`;
+        const detEl = document.getElementById("kpi-detecting-count");
+        if (detEl) detEl.textContent = `${detecting} detecting`;
         document.getElementById("kpi-shaking-count").textContent = `${shaking} shaking`;
         document.getElementById("kpi-buffering-count").textContent = `${buffering} buffering`;
 
@@ -154,7 +157,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Cluster Telemetry (AKS)
         if (snap.cluster) {
             const cl = snap.cluster;
-            document.getElementById("cluster-status-badge").textContent = cl.status;
+            const statusBadge = document.getElementById("cluster-status-badge");
+            if (statusBadge) {
+                statusBadge.textContent = cl.status;
+                statusBadge.className = "hpa-badge";
+                if (cl.status === "scaling out") statusBadge.classList.add("scaling-out");
+                else if (cl.status === "at max capacity") statusBadge.classList.add("max-capacity");
+                else if (cl.status === "scaled") statusBadge.classList.add("scaled");
+                else if (cl.status === "cooling down" || cl.status === "scaling in") statusBadge.classList.add("cooling-down");
+            }
+
+            const decisionBanner = document.getElementById("hpa-decision-banner");
+            if (decisionBanner && cl.hpa_reason) {
+                decisionBanner.textContent = cl.hpa_reason;
+            }
 
             function updateSegments(barId, ready, replicas) {
                 const bar = document.getElementById(barId);
@@ -171,26 +187,44 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }
             }
 
+            function updateCpuBadge(badgeId, cpuPct) {
+                const el = document.getElementById(badgeId);
+                if (!el) return;
+                const val = Math.round(cpuPct || 1);
+                el.textContent = `CPU ${val}% / 30%`;
+                el.className = "cpu-pill";
+                if (val >= 45) el.classList.add("cpu-high");
+                else if (val >= 25) el.classList.add("cpu-elevated");
+            }
+
             // Ingest API Pods (HPA)
-            const ing = cl.ingest || { ready_pods: cl.ready_pods, replicas: cl.replicas };
+            const ing = cl.ingest || { ready_pods: cl.ready_pods, replicas: cl.replicas, starting_pods: 0, cpu_percent: cl.cpu_percent };
             const ingVal = document.getElementById("ingest-pods-val");
-            if (ingVal) ingVal.textContent = `${ing.ready_pods} / 10`;
+            if (ingVal) {
+                const startTxt = ing.starting_pods > 0 ? ` (+${ing.starting_pods} starting)` : "";
+                ingVal.textContent = `${ing.ready_pods} / 10${startTxt}`;
+            }
             updateSegments("ingest-pod-segments", ing.ready_pods, ing.replicas);
+            updateCpuBadge("ingest-cpu-badge", ing.cpu_percent);
 
             // Processor Worker Pods (HPA)
-            const proc = cl.processor || { ready_pods: cl.ready_pods, replicas: cl.replicas };
+            const proc = cl.processor || { ready_pods: cl.ready_pods, replicas: cl.replicas, starting_pods: 0, cpu_percent: cl.cpu_percent };
             const procVal = document.getElementById("processor-pods-val");
-            if (procVal) procVal.textContent = `${proc.ready_pods} / 10`;
+            if (procVal) {
+                const startTxt = proc.starting_pods > 0 ? ` (+${proc.starting_pods} starting)` : "";
+                procVal.textContent = `${proc.ready_pods} / 10${startTxt}`;
+            }
             updateSegments("processor-pod-segments", proc.ready_pods, proc.replicas);
+            updateCpuBadge("processor-cpu-badge", proc.cpu_percent);
 
-            // Queue depth meter (scaled to 250 for realistic visual feedback)
+            // Queue depth meter
             document.getElementById("cluster-queue-val").textContent = cl.queue_depth.toLocaleString();
-            const queuePct = cl.queue_depth > 0 ? Math.max(6, Math.min(100, (cl.queue_depth / 250) * 100)) : 0;
+            const queuePct = cl.queue_depth > 0 ? Math.max(5, Math.min(100, (cl.queue_depth / 1200) * 100)) : 0;
             document.getElementById("meter-queue").style.width = `${queuePct}%`;
 
-            // DB writes meter (scaled to 200 writes/s for vivid dynamic movement)
+            // DB writes meter
             document.getElementById("cluster-db-val").textContent = cl.db_writes_per_sec.toLocaleString();
-            const dbPct = cl.db_writes_per_sec > 0 ? Math.max(8, Math.min(100, (cl.db_writes_per_sec / 200) * 100)) : 4;
+            const dbPct = cl.db_writes_per_sec > 0 ? Math.max(4, Math.min(100, (cl.db_writes_per_sec / 3500) * 100)) : 2;
             document.getElementById("meter-db").style.width = `${dbPct}%`;
         }
     }
@@ -205,11 +239,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                     magnitude: magnitude,
                     epicenter_x: epicenter[0],
                     epicenter_y: epicenter[1],
-                    duration_s: 45.0,
+                    duration_s: 55.0,
                 }),
             });
             if (resp.ok) {
-                window.seismicAudio.triggerEarthquake(magnitude);
+                window.seismicAudio.triggerEarlyWarning(magnitude, 1.5);
             }
         } catch (e) {
             console.error("Failed to trigger earthquake:", e);
@@ -224,6 +258,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     document.getElementById("slider-mag").addEventListener("input", (e) => {
         document.getElementById("val-mag").textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    document.querySelectorAll(".preset-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const mag = parseFloat(btn.dataset.mag) || 5.0;
+            const sliderEl = document.getElementById("slider-mag");
+            if (sliderEl) sliderEl.value = mag.toFixed(1);
+            const valEl = document.getElementById("val-mag");
+            if (valEl) valEl.textContent = mag.toFixed(1);
+            triggerEarthquake(mag, currentEpicenter);
+        });
     });
 
     document.getElementById("btn-clear-quake").addEventListener("click", async () => {
@@ -251,14 +296,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    // Sector quick zoom chips
+    // Sector Navigation Views
     const sectorViews = {
         all: { x: 0.0, y: 0.0, z: 1.0 },
-        A: { x: 0.0, y: 0.0, z: 3.2 },       // Downtown
-        B: { x: 13.5, y: -6.5, z: 2.5 },     // Industrial & Port
-        C: { x: -12.5, y: 6.0, z: 2.5 },     // Kelvin Dam & Residential Hills
-        D: { x: 11.0, y: 6.5, z: 2.5 },      // Transit Corridor & Meadow Mall
-        E: { x: -11.5, y: -6.5, z: 2.5 },    // Suburban Ring
+        A: { x: 0.0, y: 0.0, z: 2.5 },       // Downtown
+        B: { x: 16.0, y: -5.5, z: 2.2 },     // Industrial & Port
+        C: { x: -16.0, y: 5.5, z: 2.2 },     // Kelvin Dam & Residential Hills
+        D: { x: 15.5, y: 5.5, z: 2.2 },      // Transit Corridor & Meadow Mall
+        E: { x: -15.5, y: -5.5, z: 2.2 },    // Suburban Ring
     };
 
     document.querySelectorAll(".sector-chips .chip").forEach((chip) => {
@@ -316,11 +361,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Scenario Play/Stop Button
     const btnScenario = document.getElementById("btn-scenario-toggle");
     btnScenario.addEventListener("click", async () => {
-        const action = isScenarioPlaying ? "stop" : "start";
         try {
-            await fetch(`/api/scenario/timeline/${action}`, { method: "POST" });
-        } catch (e) {
-            console.error("Failed to toggle scenario:", e);
+            if (isScenarioPlaying) {
+                await fetch("/api/scenario/stop", { method: "POST" });
+                isScenarioPlaying = false;
+                btnScenario.textContent = "▶ Play scenario";
+            } else {
+                await fetch("/api/scenario/start", { method: "POST" });
+                isScenarioPlaying = true;
+                btnScenario.textContent = "⏹ Stop scenario";
+            }
+        } catch (err) {
+            console.error("Failed to toggle scenario:", err);
         }
     });
 });

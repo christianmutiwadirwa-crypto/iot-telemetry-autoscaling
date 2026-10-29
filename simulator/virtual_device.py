@@ -58,6 +58,7 @@ class VirtualSensorNode:
 
         # Internal state
         self.is_triggered: bool = False
+        self.is_detecting: bool = False
         self.link_online: bool = True
         self.offline_buffer: deque = deque(maxlen=MAX_BUFFERED_BATCHES)
 
@@ -136,12 +137,13 @@ class VirtualSensorNode:
         x, y, z, peak_g, _ = self.generator.generate_window(
             start_sim_time_s=sim_time_s,
             sample_count=sample_count,
-            active_event=active_event,
+            active_event=active_event, force_s_wave=True,
         )
 
         # Keep node triggered throughout active seismic event duration
         if active_event is not None and sim_time_s <= (active_event.start_time_s + active_event.duration_s + 2.0):
             self.is_triggered = True
+            self.is_detecting = False
         else:
             self.is_triggered = False
 

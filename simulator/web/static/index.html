@@ -17,7 +17,7 @@
                 <h1 class="header-title">Metro seismic command</h1>
                 <div class="header-pills">
                     <span class="pill pill-live"><span class="pulse-dot"></span> Live simulated stream</span>
-                    <span class="pill pill-target" id="pill-ingest-target">Ingest target localhost:8000</span>
+                    <span class="pill pill-target" id="pill-ingest-target">Ingest target 20.239.8.235:8000</span>
                     <span class="pill pill-scenario" id="pill-scenario-phase">Scenario: quiescent baseline</span>
                 </div>
             </div>
@@ -41,8 +41,9 @@
                 <div class="kpi-metric"><span id="kpi-fleet-total">500</span> <span class="kpi-unit">stations</span></div>
                 <div class="kpi-sub">
                     <span class="status-normal" id="kpi-normal-count">500 normal</span>
-                    <span class="status-shaking" id="kpi-shaking-count">0 shaking</span>
-                    <span class="status-buffering" id="kpi-buffering-count">0 buffering</span>
+                    <span class="status-detecting" id="kpi-detecting-count" style="color: #f59e0b; margin-left: 6px;">0 detecting</span>
+                    <span class="status-shaking" id="kpi-shaking-count" style="margin-left: 6px;">0 shaking</span>
+                    <span class="status-buffering" id="kpi-buffering-count" style="margin-left: 6px;">0 buffering</span>
                 </div>
             </div>
 
@@ -73,6 +74,11 @@
                         <input type="range" id="slider-mag" min="3.0" max="7.5" step="0.1" value="6.5">
                         <span class="mag-val" id="val-mag">6.5</span>
                     </div>
+                    <div class="preset-chips" title="One-click seismic intensity presets to demonstrate proportional HPA scaling">
+                        <button class="chip preset-chip" data-mag="4.0">Minor M4.0</button>
+                        <button class="chip preset-chip" data-mag="5.3">Sector M5.3</button>
+                        <button class="chip preset-chip" data-mag="6.8">Major M6.8</button>
+                    </div>
                     <button id="btn-network-toggle" class="btn btn-outline">Sever link</button>
                     <button id="btn-clear-quake" class="btn btn-outline">Clear event</button>
                 </div>
@@ -91,8 +97,9 @@
                 <div class="toolbar-right">
                     <div class="map-legend">
                         <span class="leg-item"><span class="leg-dot dot-green"></span> Quiescent</span>
-                        <span class="leg-item"><span class="leg-dot dot-red"></span> Shaking</span>
-                        <span class="leg-item"><span class="leg-dot dot-amber"></span> Link severed</span>
+                        <span class="leg-item"><span class="leg-dot dot-amber" style="background: #f59e0b; box-shadow: 0 0 6px #f59e0b;"></span> P-Wave detecting</span>
+                        <span class="leg-item"><span class="leg-dot dot-red"></span> Shaking (S-Wave)</span>
+                        <span class="leg-item"><span class="leg-dot dot-orange" style="background: #f97316;"></span> Link severed</span>
                     </div>
                     <div class="zoom-controls">
                         <button id="btn-zoom-in" class="btn-icon" title="Zoom in">+</button>
@@ -144,14 +151,21 @@
                 </div>
 
                 <div class="cluster-body">
+                    <!-- HPA Decision Status Banner -->
+                    <div class="hpa-decision-banner" id="hpa-decision-banner">
+                        Live AKS (telemetry-aks): 2/10 pods Running — Ingest CPU 2%/30%, Processor CPU 1%/30%
+                    </div>
+
                     <!-- Ingest API Pod Scaling -->
                     <div class="cluster-row">
                         <div class="row-header">
-                            <span class="row-label">Ingest API pods (HPA)</span>
+                            <span class="row-label">
+                                Ingest API pods (HPA)
+                                <span class="cpu-pill" id="ingest-cpu-badge">CPU 2% / 30%</span>
+                            </span>
                             <span class="row-val" id="ingest-pods-val">2 / 10</span>
                         </div>
                         <div class="pod-bar" id="ingest-pod-segments">
-                            <!-- 10 segments populated dynamically -->
                             <div class="pod-seg active"></div>
                             <div class="pod-seg active"></div>
                             <div class="pod-seg"></div>
@@ -168,11 +182,13 @@
                     <!-- Processor Worker Pod Scaling -->
                     <div class="cluster-row">
                         <div class="row-header">
-                            <span class="row-label">Processor worker pods (HPA)</span>
+                            <span class="row-label">
+                                Processor worker pods (HPA)
+                                <span class="cpu-pill" id="processor-cpu-badge">CPU 1% / 30%</span>
+                            </span>
                             <span class="row-val" id="processor-pods-val">2 / 10</span>
                         </div>
                         <div class="pod-bar" id="processor-pod-segments">
-                            <!-- 10 segments populated dynamically -->
                             <div class="pod-seg active"></div>
                             <div class="pod-seg active"></div>
                             <div class="pod-seg"></div>
@@ -183,6 +199,11 @@
                             <div class="pod-seg"></div>
                             <div class="pod-seg"></div>
                             <div class="pod-seg"></div>
+                        </div>
+                        <div class="pod-legend">
+                            <span><i class="pod-dot ready"></i> Ready</span>
+                            <span><i class="pod-dot starting"></i> Provisioning (Pending)</span>
+                            <span><i class="pod-dot idle"></i> Unallocated slot</span>
                         </div>
                     </div>
 
@@ -228,10 +249,10 @@
         </section>
     </div>
 
-    <!-- Scripts -->
-    <script src="/static/audio.js"></script>
-    <script src="/static/seismo.js"></script>
-    <script src="/static/city.js"></script>
-    <script src="/static/app.js"></script>
+    <!-- Scripts with cache-busting version parameter -->
+    <script src="/static/audio.js?v=4"></script>
+    <script src="/static/seismo.js?v=4"></script>
+    <script src="/static/city.js?v=4"></script>
+    <script src="/static/app.js?v=4"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@ Configuration constants and settings for the City Seismic Simulator.
 from typing import Dict, Tuple
 
 # Ingestion Endpoint & Authentication
-DEFAULT_INGEST_URL = "http://localhost:8000/api/v1/telemetry"
+DEFAULT_INGEST_URL = "http://20.239.8.235:8000/api/v1/telemetry"
 DEFAULT_API_KEY = "dev-secret-key-123"
 
 # Sensor Sampling & Batching Parameters
@@ -23,35 +23,35 @@ SECTOR_INFO: Dict[str, Dict] = {
         "name": "Downtown & High-Rise District",
         "node_range": (1, 100),
         "center_coords": (0.0, 0.0),
-        "radius_km": 3.2,
+        "radius_km": 6.5,
         "soil_amplification": 1.1,
     },
     "B": {
         "name": "Industrial & Port Zone",
         "node_range": (101, 200),
-        "center_coords": (13.5, -6.5),
-        "radius_km": 4.5,
+        "center_coords": (16.0, -5.5),
+        "radius_km": 8.0,
         "soil_amplification": 1.4,
     },
     "C": {
         "name": "Residential Hills & Kelvin Dam",
         "node_range": (201, 300),
-        "center_coords": (-12.5, 6.0),
-        "radius_km": 4.8,
+        "center_coords": (-16.0, 5.5),
+        "radius_km": 8.0,
         "soil_amplification": 1.25,
     },
     "D": {
         "name": "Transit & Infrastructure Corridor",
         "node_range": (301, 400),
-        "center_coords": (11.0, 6.5),
-        "radius_km": 4.2,
+        "center_coords": (15.5, 5.5),
+        "radius_km": 7.8,
         "soil_amplification": 1.0,
     },
     "E": {
         "name": "Outlying Suburban Ring",
         "node_range": (401, 500),
-        "center_coords": (-11.5, -6.5),
-        "radius_km": 4.6,
+        "center_coords": (-15.5, -5.5),
+        "radius_km": 7.8,
         "soil_amplification": 0.9,
     },
 }

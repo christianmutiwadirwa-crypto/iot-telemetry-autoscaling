@@ -7,8 +7,10 @@
  *   tank farm, cooling towers, hospitals, malls, arena, suburban houses)
  * - ~2,000 trees & parks
  * - Dynamic moving traffic (cars, freight train)
- * - Seismic shockwave ripples (P-wave & S-wave propagation)
- * - Interactive 500 sensors with LOD, hover inspect, and zoom/pan navigation.
+ * - Chronological physical wave propagation:
+ *   - Fast P-wave (2.8 km/s): sensors turn AMBER in distance order
+ *   - S-wave (1.5 km/s): sensors turn RED and burst-fire to AKS
+ * - 500 sensors spread across 50 km x 24 km widescreen layout.
  */
 
 class MetroMap {
@@ -27,7 +29,7 @@ class MetroMap {
         this.selectedSensorId = "node-001";
         this.hoveredSensor = null;
 
-        // Viewport transform (World coordinates in km: X [-18, 17.5], Y [-11.5, 11.5])
+        // Viewport transform (World coordinates in km: X [-25.0, 25.0], Y [-12.0, 12.0])
         this.centerX = 0.0;
         this.centerY = 0.0;
         this.zoom = 1.0;
@@ -74,6 +76,7 @@ class MetroMap {
         if (!snapshot) return;
         if (snapshot.sim_time_s !== undefined) {
             this.simTimeS = snapshot.sim_time_s;
+            this.lastSnapshotPerfTime = performance.now();
         }
         this.activeEvent = snapshot.active_event || null;
 
@@ -142,7 +145,7 @@ class MetroMap {
 
             const w = Math.max(300, this.width || 800);
             const h = Math.max(200, this.height || 500);
-            const baseFit = Math.min(w / 36.5, h / 24.0);
+            const baseFit = Math.min(w / 52.0, h / 25.0);
             const oldScale = baseFit * (this.zoom || 1.0);
 
             // World coordinate under cursor right now
@@ -150,13 +153,13 @@ class MetroMap {
             const wy = this.centerY - (my - this.height / 2) / oldScale;
 
             const factor = e.deltaY < 0 ? 1.15 : 0.87;
-            const newZoom = Math.min(14.0, Math.max(0.7, (this.targetZoom || 1.0) * factor));
+            const newZoom = Math.min(14.0, Math.max(0.65, (this.targetZoom || 1.0) * factor));
             const newScale = baseFit * newZoom;
 
             this.zoom = newZoom;
             this.targetZoom = newZoom;
 
-            // Shift center so the world coordinate (wx, wy) stays directly under cursor (mx, my)
+            // Shift center so world point stays under cursor
             this.centerX = wx - (mx - this.width / 2) / newScale;
             this.centerY = wy + (my - this.height / 2) / newScale;
 
@@ -180,16 +183,16 @@ class MetroMap {
         if (isNaN(this.zoom)) this.zoom = 1.0;
         if (isNaN(this.targetZoom)) this.targetZoom = 1.0;
 
-        const minX = -18.0;
-        const maxX = 17.5;
-        const minY = -11.5;
-        const maxY = 11.5;
+        const minX = -25.0;
+        const maxX = 25.0;
+        const minY = -12.0;
+        const maxY = 12.0;
         this.centerX = Math.max(minX, Math.min(maxX, this.centerX));
         this.centerY = Math.max(minY, Math.min(maxY, this.centerY));
         this.targetCenterX = Math.max(minX, Math.min(maxX, this.targetCenterX));
         this.targetCenterY = Math.max(minY, Math.min(maxY, this.targetCenterY));
-        this.zoom = Math.max(0.7, Math.min(14.0, this.zoom));
-        this.targetZoom = Math.max(0.7, Math.min(14.0, this.targetZoom));
+        this.zoom = Math.max(0.65, Math.min(14.0, this.zoom));
+        this.targetZoom = Math.max(0.65, Math.min(14.0, this.targetZoom));
     }
 
     handleClick(e) {
@@ -228,10 +231,10 @@ class MetroMap {
         return null;
     }
 
-    flyTo(x, y, zoom = 2.5) {
+    flyTo(x, y, zoom = 2.2) {
         this.targetCenterX = x;
         this.targetCenterY = y;
-        this.targetZoom = Math.min(12.0, Math.max(0.7, zoom));
+        this.targetZoom = Math.min(12.0, Math.max(0.65, zoom));
         this.clampCenter();
     }
 
@@ -242,7 +245,7 @@ class MetroMap {
     }
 
     zoomOut() {
-        this.targetZoom = Math.max(0.7, this.zoom * 0.74);
+        this.targetZoom = Math.max(0.65, this.zoom * 0.74);
         this.zoom = this.targetZoom;
         this.clampCenter();
     }
@@ -267,11 +270,11 @@ class MetroMap {
     }
 
     getKmToPixelRatio() {
-        // Base fit: fit 35.5 km width into canvas width
+        // Base fit: fit 50 km width into canvas width
         const w = Math.max(300, this.width || 800);
         const h = Math.max(200, this.height || 500);
-        const baseFit = Math.min(w / 36.5, h / 24.0);
-        return baseFit * Math.max(0.7, this.zoom || 1.0);
+        const baseFit = Math.min(w / 52.0, h / 25.0);
+        return baseFit * Math.max(0.65, this.zoom || 1.0);
     }
 
     worldToScreen(wx, wy) {
@@ -293,12 +296,12 @@ class MetroMap {
         this.vehicles = [];
         const majorRoads = this.layout.roads.filter(r => r.type === "highway" || r.type === "arterial");
 
-        for (let i = 0; i < 45; i++) {
+        for (let i = 0; i < 50; i++) {
             const road = majorRoads[i % majorRoads.length];
             this.vehicles.push({
                 road: road,
                 progress: Math.random(),
-                speed: (0.015 + Math.random() * 0.02) * (Math.random() > 0.5 ? 1 : -1),
+                speed: (0.012 + Math.random() * 0.02) * (Math.random() > 0.5 ? 1 : -1),
                 color: ["#cbd5e1", "#e2e8f0", "#94a3b8", "#f59e0b", "#38bdf8", "#ef4444"][i % 6],
                 type: i % 7 === 0 ? "bus" : "car",
             });
@@ -325,7 +328,6 @@ class MetroMap {
         this.zoom += (this.targetZoom - this.zoom) * 0.15;
         this.clampCenter();
 
-        // Check if earthquake shaking is active (causes cars to brake!)
         const isQuake = !!this.activeEvent;
 
         // Update vehicles
@@ -352,7 +354,7 @@ class MetroMap {
 
         if (!this.layout) return;
 
-        // Subtle sector territory tints
+        // Sector territory subtle glow tints
         this.renderSectorTints(ctx);
 
         // 2. Parks & Woods
@@ -376,7 +378,7 @@ class MetroMap {
         // 8. Traffic (cars & trains)
         this.renderTraffic(ctx);
 
-        // 9. Shockwave Propagation Waves
+        // 9. Chronological Shockwave Propagation Waves
         this.renderShockwaves(ctx);
 
         // 10. Sensor Nodes (500)
@@ -456,28 +458,23 @@ class MetroMap {
             }
 
             if (isRail) {
-                // Rail bed
                 ctx.strokeStyle = "#475569";
                 ctx.lineWidth = wPx;
                 ctx.setLineDash([]);
                 ctx.stroke();
-                // Rail ties
                 ctx.strokeStyle = "#cbd5e1";
                 ctx.lineWidth = 1;
                 ctx.setLineDash([3, 4]);
                 ctx.stroke();
                 ctx.setLineDash([]);
             } else if (isHwy) {
-                // Highway casing
                 ctx.strokeStyle = "#1e293b";
                 ctx.lineWidth = wPx + 2;
                 ctx.setLineDash([]);
                 ctx.stroke();
-                // Highway surface
                 ctx.strokeStyle = "#334155";
                 ctx.lineWidth = wPx;
                 ctx.stroke();
-                // Dashed center
                 if (this.zoom > 1.2) {
                     ctx.strokeStyle = "rgba(251, 191, 36, 0.6)";
                     ctx.lineWidth = 1;
@@ -515,10 +512,10 @@ class MetroMap {
             ctx.restore();
         }
 
-        // 2. Meandering River
+        // 2. Meandering Trans-Metro River
         if (this.layout.river && this.layout.river.points) {
             const pts = this.layout.river.points;
-            const riverW = (this.layout.river.width || 0.55) * scale;
+            const riverW = (this.layout.river.width || 0.65) * scale;
 
             ctx.beginPath();
             for (let i = 0; i < pts.length; i++) {
@@ -529,17 +526,14 @@ class MetroMap {
             ctx.lineCap = "round";
             ctx.lineJoin = "round";
 
-            // Deep water core
             ctx.strokeStyle = "#081d33";
             ctx.lineWidth = riverW + 4;
             ctx.stroke();
 
-            // Water surface
             ctx.strokeStyle = "#0d2b4d";
             ctx.lineWidth = riverW;
             ctx.stroke();
 
-            // Water reflection sheen
             ctx.strokeStyle = "rgba(56, 189, 248, 0.15)";
             ctx.lineWidth = riverW * 0.4;
             ctx.stroke();
@@ -556,7 +550,6 @@ class MetroMap {
             const p2 = this.worldToScreen(dam.x2, dam.y2);
             const damW = Math.max(4, dam.width * scale);
 
-            // Dam concrete structure
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
             ctx.lineTo(p2.x, p2.y);
@@ -565,7 +558,6 @@ class MetroMap {
             ctx.lineCap = "square";
             ctx.stroke();
 
-            // Dam crest road
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
             ctx.lineTo(p2.x, p2.y);
@@ -574,13 +566,12 @@ class MetroMap {
             ctx.stroke();
         }
 
-        // 5 Bridges
+        // 5 Major Bridges
         if (this.layout.bridges) {
             for (const br of this.layout.bridges) {
                 const p1 = this.worldToScreen(br.x1, br.y1);
                 const p2 = this.worldToScreen(br.x2, br.y2);
 
-                // Deck
                 ctx.beginPath();
                 ctx.moveTo(p1.x, p1.y);
                 ctx.lineTo(p2.x, p2.y);
@@ -589,7 +580,6 @@ class MetroMap {
                 ctx.lineCap = "round";
                 ctx.stroke();
 
-                // Pier towers
                 const mx = (p1.x + p2.x) / 2;
                 const my = (p1.y + p2.y) / 2;
                 ctx.fillStyle = "#f59e0b";
@@ -605,7 +595,6 @@ class MetroMap {
         const scale = this.getKmToPixelRatio();
 
         for (const s of this.layout.structures) {
-            // LOD pruning: small houses hidden when zoomed out
             if (s.kind === "house_cluster" && this.zoom < 1.15) continue;
             if (s.kind === "warehouse" && this.zoom < 0.9) continue;
 
@@ -616,35 +605,29 @@ class MetroMap {
             ctx.save();
             ctx.translate(sc.x, sc.y);
 
-            // Shading & shadow based on floors
             if (s.floors && s.floors > 10) {
                 const shadowOff = Math.min(10, s.floors * 0.15 * (this.zoom * 0.8));
                 ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
                 ctx.fillRect(-w / 2 + shadowOff, -h / 2 + shadowOff, w, h);
             }
 
-            // Building body
             ctx.fillStyle = s.color || "#475569";
             ctx.fillRect(-w / 2, -h / 2, w, h);
             ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
             ctx.lineWidth = 1;
             ctx.strokeRect(-w / 2, -h / 2, w, h);
 
-            // Special architectural icons
             if (s.kind === "skyscraper" && this.zoom > 1.8) {
-                // Helipad / Spire beacon
                 ctx.fillStyle = "#38bdf8";
                 ctx.beginPath();
                 ctx.arc(0, 0, Math.max(1.5, w * 0.15), 0, Math.PI * 2);
                 ctx.fill();
             } else if (s.kind === "hospital") {
-                // Red Cross
                 ctx.fillStyle = "#ffffff";
                 const cSize = Math.max(2, w * 0.35);
                 ctx.fillRect(-cSize / 6, -cSize / 2, cSize / 3, cSize);
                 ctx.fillRect(-cSize / 2, -cSize / 6, cSize, cSize / 3);
             } else if (s.kind === "crane") {
-                // Crane jib line
                 ctx.strokeStyle = "#f59e0b";
                 ctx.lineWidth = 2;
                 ctx.beginPath();
@@ -666,7 +649,6 @@ class MetroMap {
             const sc = this.worldToScreen(t[0], t[1]);
             const rPx = Math.max(1.2, t[2] * scale);
 
-            // Screen frustum culling
             if (sc.x < -10 || sc.x > this.width + 10 || sc.y < -10 || sc.y > this.height + 10) continue;
 
             ctx.beginPath();
@@ -678,12 +660,10 @@ class MetroMap {
     renderTraffic(ctx) {
         const scale = this.getKmToPixelRatio();
 
-        // 1. Vehicles along roads
         for (const v of this.vehicles) {
             const pts = v.road.points;
             if (!pts || pts.length < 2) continue;
 
-            // Compute coordinate along polyline
             const totalSegs = pts.length - 1;
             const fIdx = v.progress * totalSegs;
             const seg = Math.min(totalSegs - 1, Math.floor(fIdx));
@@ -701,7 +681,6 @@ class MetroMap {
             ctx.fill();
         }
 
-        // 2. Rail Train
         const railRoad = this.layout.roads.find(r => r.type === "rail");
         if (railRoad && railRoad.points) {
             const pts = railRoad.points;
@@ -715,7 +694,6 @@ class MetroMap {
             const wy = p1[1] + t * (p2[1] - p1[1]);
             const sc = this.worldToScreen(wx, wy);
 
-            // Train head & carriages
             ctx.fillStyle = "#38bdf8";
             ctx.beginPath();
             ctx.arc(sc.x, sc.y, 4, 0, Math.PI * 2);
@@ -733,79 +711,156 @@ class MetroMap {
         const epicenter = ev.epicenter || [0, 0];
         const sc = this.worldToScreen(epicenter[0], epicenter[1]);
         const scale = this.getKmToPixelRatio();
-        const duration = ev.duration_s || 45.0;
+        const duration = ev.duration_s || 55.0;
 
-        // Calculate wave front propagation distances
-        const age = Math.max(0.0, this.simTimeS - ev.start_time_s);
-        const pRadiusKm = age * 6.0; // P-wave @ 6 km/s
-        const sRadiusKm = age * 3.5; // S-wave @ 3.5 km/s
+        // Smooth interpolated simulation time
+        const dtSinceSnap = this.lastSnapshotPerfTime ? (performance.now() - this.lastSnapshotPerfTime) / 1000.0 : 0.0;
+        const liveSimTime = this.simTimeS + Math.min(0.6, Math.max(0.0, dtSinceSnap));
 
-        // 1. Epicenter Marker with pulsing beacon
-        const epiPulse = (performance.now() % 1000) / 1000;
+        const age = Math.max(0.0, liveSimTime - ev.start_time_s);
+        const pVel = ev.p_velocity_km_s || 2.8;
+        const sVel = ev.s_velocity_km_s || 1.5;
+        const sDelay = ev.early_warning_delay_s !== undefined ? ev.early_warning_delay_s : 1.5;
+        const sAge = Math.max(0.0, age - sDelay);
+
+        const pRadiusKm = age * pVel; // Expanding P-wave front (Amber)
+        const sRadiusKm = sAge * sVel; // Expanding S-wave front (Red)
+        const triggerRadiusKm = ev.trigger_radius_km || 25.0;
+        const maxWaveReachKm = Math.min(48.0, Math.max(6.0, triggerRadiusKm * 1.25));
+
+        // 0. Draw 0.05g Sensor Activation Radius Zone
+        if (triggerRadiusKm < 35.0) {
+            const trigPx = triggerRadiusKm * scale;
+            ctx.save();
+            ctx.fillStyle = "rgba(239, 68, 68, 0.035)";
+            ctx.strokeStyle = "rgba(245, 158, 11, 0.45)";
+            ctx.lineWidth = 1.3;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, trigPx, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = "rgba(253, 230, 138, 0.88)";
+            ctx.font = "500 10px JetBrains Mono, monospace";
+            ctx.textAlign = "center";
+            ctx.fillText(`0.05g Trigger Radius (${triggerRadiusKm.toFixed(1)} km)`, sc.x, sc.y - trigPx - 6);
+            ctx.restore();
+        }
+
+        // 1. Epicenter Marker with pulsing reticle
+        const epiPulse = (performance.now() % 900) / 900;
         ctx.save();
         ctx.fillStyle = "#ef4444";
         ctx.shadowColor = "#ef4444";
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.arc(sc.x, sc.y, 6, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.strokeStyle = `rgba(239, 68, 68, ${1.0 - epiPulse})`;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
-        ctx.arc(sc.x, sc.y, 6 + epiPulse * 18, 0, Math.PI * 2);
+        ctx.arc(sc.x, sc.y, 8 + epiPulse * 22, 0, Math.PI * 2);
         ctx.stroke();
+
+        ctx.fillStyle = "#fca5a5";
+        ctx.font = "600 11px JetBrains Mono, monospace";
+        ctx.textAlign = "left";
+        ctx.fillText(`EPICENTER M${ev.magnitude.toFixed(1)} [T+${age.toFixed(1)}s]`, sc.x + 14, sc.y + 4);
         ctx.restore();
 
-        // 2. Trailing concentric reverberation waves (propagating ripples)
-        const ripplePeriod = 2.5; // New wave ring every 2.5 seconds
-        const maxRipples = Math.min(10, Math.floor(Math.min(age, duration) / ripplePeriod));
-        for (let i = 1; i <= maxRipples; i++) {
-            const ringAge = age - i * ripplePeriod;
-            if (ringAge > 0) {
-                const ringRadiusKm = ringAge * 3.5;
-                if (ringRadiusKm > 0 && ringRadiusKm < 42.0) {
-                    const rPx = ringRadiusKm * scale;
-                    const alpha = Math.max(0.05, 0.45 * (1.0 - ringRadiusKm / 42.0));
-                    ctx.save();
-                    ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
-                    ctx.lineWidth = 1.8;
-                    ctx.beginPath();
-                    ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.restore();
+        // 2. Trailing concentric reverberation waves behind leading S-wave
+        if (sAge > 0) {
+            const ripplePeriod = 2.2;
+            const maxRipples = Math.min(10, Math.floor(Math.min(sAge, duration) / ripplePeriod));
+            for (let i = 1; i <= maxRipples; i++) {
+                const ringAge = sAge - i * ripplePeriod;
+                if (ringAge > 0) {
+                    const ringRadiusKm = ringAge * sVel;
+                    if (ringRadiusKm > 0 && ringRadiusKm < maxWaveReachKm) {
+                        const rPx = ringRadiusKm * scale;
+                        const alpha = Math.max(0.05, 0.42 * (1.0 - ringRadiusKm / maxWaveReachKm));
+                        ctx.save();
+                        ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+                        ctx.lineWidth = 1.6;
+                        ctx.beginPath();
+                        ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
                 }
+            }
+
+            // 3. Leading S-wave Front (intense Red shockwave)
+            if (sRadiusKm > 0 && sRadiusKm < maxWaveReachKm) {
+                const rPx = sRadiusKm * scale;
+                const sAlpha = Math.max(0.2, 0.95 * (1.0 - sRadiusKm / (maxWaveReachKm * 1.05)));
+                ctx.save();
+                ctx.strokeStyle = `rgba(239, 68, 68, ${sAlpha})`;
+                ctx.lineWidth = 3.5;
+                ctx.shadowColor = "#ef4444";
+                ctx.shadowBlur = 14;
+                ctx.beginPath();
+                ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
             }
         }
 
-        // 3. Expanding Leading S-wave (bright neon red, main shockwave burst)
-        if (sRadiusKm > 0 && sRadiusKm < 45.0) {
-            const rPx = sRadiusKm * scale;
-            const sAlpha = Math.max(0.2, 0.9 * (1.0 - sRadiusKm / 50.0));
+        // 4. Leading P-wave Front (fast expanding Amber wave)
+        if (pRadiusKm > 0 && pRadiusKm < maxWaveReachKm * 1.15) {
+            const rPx = pRadiusKm * scale;
+            const pAlpha = Math.max(0.18, 0.75 * (1.0 - pRadiusKm / (maxWaveReachKm * 1.2)));
             ctx.save();
-            ctx.strokeStyle = `rgba(239, 68, 68, ${sAlpha})`;
-            ctx.lineWidth = 3.5;
-            ctx.shadowColor = "#ef4444";
-            ctx.shadowBlur = 14;
+            ctx.strokeStyle = `rgba(245, 158, 11, ${pAlpha})`;
+            ctx.lineWidth = 2.4;
+            ctx.setLineDash([6, 6]);
+            ctx.shadowColor = "#f59e0b";
+            ctx.shadowBlur = 10;
             ctx.beginPath();
             ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
             ctx.stroke();
             ctx.restore();
         }
 
-        // 4. Expanding P-wave (amber dashed precursor wave @ 6 km/s)
-        if (pRadiusKm > 0 && pRadiusKm < 48.0) {
-            const rPx = pRadiusKm * scale;
-            const pAlpha = Math.max(0.15, 0.5 * (1.0 - pRadiusKm / 50.0));
-            ctx.save();
-            ctx.strokeStyle = `rgba(251, 191, 36, ${pAlpha})`;
-            ctx.lineWidth = 2.0;
-            ctx.setLineDash([6, 6]);
-            ctx.beginPath();
-            ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.restore();
+        // 5. Top-Center Map HUD Alert Banner
+        ctx.save();
+        const bannerW = 540;
+        const bannerH = 40;
+        const bx = (this.width - bannerW) / 2;
+        const by = 14;
+
+        ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+        ctx.strokeStyle = sRadiusKm < triggerRadiusKm ? "rgba(245, 158, 11, 0.85)" : "rgba(239, 68, 68, 0.85)";
+        ctx.lineWidth = 1.5;
+        ctx.roundRect(bx, by, bannerW, bannerH, 6);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = "600 12px JetBrains Mono, monospace";
+        ctx.textAlign = "center";
+        if (sRadiusKm < triggerRadiusKm) {
+            ctx.fillStyle = "#fde68a";
+            ctx.fillText(
+                `⚡ SEISMIC WAVE PROPAGATING (M${ev.magnitude.toFixed(1)}) • P-Wave ${pRadiusKm.toFixed(1)}km • S-Wave ${sRadiusKm.toFixed(1)}km [T+${age.toFixed(1)}s]`,
+                bx + bannerW / 2,
+                by + 20
+            );
+            const pct = Math.max(0, Math.min(1, sRadiusKm / Math.max(1, triggerRadiusKm)));
+            ctx.fillStyle = "rgba(245, 158, 11, 0.25)";
+            ctx.fillRect(bx + 12, by + 29, bannerW - 24, 4);
+            ctx.fillStyle = "#f59e0b";
+            ctx.fillRect(bx + 12, by + 29, (bannerW - 24) * pct, 4);
+        } else {
+            ctx.fillStyle = "#fca5a5";
+            ctx.fillText(
+                `🚨 FULL METROPOLITAN IMPACT (M${ev.magnitude.toFixed(1)}) • CLUSTER AUTOSCALING ENGAGED [T+${age.toFixed(1)}s]`,
+                bx + bannerW / 2,
+                by + 24
+            );
         }
+        ctx.restore();
     }
 
     renderSensors(ctx) {
@@ -820,28 +875,40 @@ class MetroMap {
             const isSelected = s.id === this.selectedSensorId;
             const isHovered = s === this.hoveredSensor;
             const isShaking = s.status === "triggered";
+            const isDetecting = s.status === "detecting";
             const isBuffering = s.status === "buffering";
 
             let color = "#10b981"; // quiescent emerald
             if (isShaking) color = "#ef4444"; // shaking red
-            else if (isBuffering) color = "#f59e0b"; // link severed amber
+            else if (isDetecting) color = "#f59e0b"; // P-wave detection amber!
+            else if (isBuffering) color = "#f97316"; // link severed orange
 
             const radius = isSelected ? 5.5 : (isHovered ? 4.5 : 3.0);
 
+            // Detecting P-wave pulse animation
+            if (isDetecting) {
+                const pulse = (performance.now() % 600) / 600;
+                ctx.strokeStyle = `rgba(245, 158, 11, ${1.0 - pulse})`;
+                ctx.lineWidth = 1.6;
+                ctx.beginPath();
+                ctx.arc(sc.x, sc.y, radius + pulse * 9, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
             // Shaking shockwave pulse animation
             if (isShaking) {
-                const pulse = (performance.now() % 800) / 800;
+                const pulse = (performance.now() % 750) / 750;
                 ctx.strokeStyle = `rgba(239, 68, 68, ${1.0 - pulse})`;
-                ctx.lineWidth = 1.5;
+                ctx.lineWidth = 2.0;
                 ctx.beginPath();
-                ctx.arc(sc.x, sc.y, radius + pulse * 12, 0, Math.PI * 2);
+                ctx.arc(sc.x, sc.y, radius + pulse * 14, 0, Math.PI * 2);
                 ctx.stroke();
             }
 
             // Buffering badge ring
             if (isBuffering) {
-                ctx.strokeStyle = "#f59e0b";
-                ctx.lineWidth = 1;
+                ctx.strokeStyle = "#f97316";
+                ctx.lineWidth = 1.2;
                 ctx.setLineDash([2, 2]);
                 ctx.beginPath();
                 ctx.arc(sc.x, sc.y, radius + 3, 0, Math.PI * 2);
@@ -852,10 +919,9 @@ class MetroMap {
             // Sensor body
             ctx.fillStyle = color;
             ctx.shadowColor = color;
-            ctx.shadowBlur = isShaking || isSelected ? 8 : 4;
+            ctx.shadowBlur = isShaking || isSelected ? 8 : (isDetecting ? 6 : 4);
 
             if (s.kind === "dam" || s.kind === "bridge") {
-                // Diamond symbol for key structural health monitoring
                 ctx.beginPath();
                 ctx.moveTo(sc.x, sc.y - radius * 1.3);
                 ctx.lineTo(sc.x + radius * 1.3, sc.y);
@@ -903,7 +969,6 @@ class MetroMap {
     }
 
     renderMinimap(ctx) {
-        // Compact mini-map in bottom right corner
         const mw = 120;
         const mh = 75;
         const pad = 16;
@@ -922,9 +987,9 @@ class MetroMap {
         ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
         ctx.strokeRect(x + 4, y + 4, mw - 8, mh - 8);
 
-        // Current camera viewport frustum
-        const normX = (this.centerX + 18.0) / 35.5;
-        const normY = (11.5 - this.centerY) / 23.0;
+        // Current camera viewport frustum (bounds: X [-25, 25], Y [-12, 12])
+        const normX = (this.centerX + 25.0) / 50.0;
+        const normY = (12.0 - this.centerY) / 24.0;
         const camX = x + 4 + normX * (mw - 8);
         const camY = y + 4 + normY * (mh - 8);
         const boxW = Math.max(8, (mw - 8) / this.zoom);
@@ -937,9 +1002,8 @@ class MetroMap {
     }
 
     renderScaleBar(ctx) {
-        // Dynamic adaptive scale bar in bottom left
-        const scale = this.getKmToPixelRatio(); // pixels per km
-        const targetKm = 80 / scale; // aim for ~80px width
+        const scale = this.getKmToPixelRatio();
+        const targetKm = 80 / scale;
         const niceValues = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0];
         let kmVal = 2.0;
         for (const v of niceValues) {
@@ -996,7 +1060,7 @@ class MetroMap {
 
         ctx.fillStyle = "#ffffff";
         ctx.fillText(text1, tx + 8, ty + 16);
-        ctx.fillStyle = s.status === "triggered" ? "#ef4444" : (s.status === "buffering" ? "#f59e0b" : "#10b981");
+        ctx.fillStyle = s.status === "triggered" ? "#ef4444" : (s.status === "detecting" ? "#f59e0b" : (s.status === "buffering" ? "#f97316" : "#10b981"));
         ctx.fillText(text2, tx + 8, ty + 32);
         ctx.restore();
     }

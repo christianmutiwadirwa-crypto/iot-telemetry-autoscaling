@@ -3,11 +3,11 @@ Asyncio Fleet Manager (Task L6)
 
 Manages a metropolitan fleet of up to 500 virtual seismic sensor nodes:
 - Geographic layout across Sectors A through E.
-- Dynamic fleet scaling: smoothly ramp from 50 to 500 nodes with random joins and leaves.
-- High-concurrency client connection pooling (aiohttp TCPConnector) to ensure the 
-  simulator laptop is never the bottleneck.
-- Event injection: trigger earthquakes, cut sector network links, restore with backfill flush.
-- Real-time aggregated fleet statistics (req/sec, active triggered nodes, queue depth, error rates).
+- Dynamic fleet scaling: smoothly ramp from 50 to 500 nodes.
+- Chronological physical wave propagation:
+  - P-wave (2.8 km/s): sensors turn AMBER ("detecting") in distance order.
+  - S-wave (1.5 km/s trailing): sensors turn RED ("shaking / triggered") and burst-fire to AKS.
+  - Stations where local PGA < 0.05g transition back to GREEN ("quiescent").
 """
 
 import asyncio
@@ -50,6 +50,7 @@ class FleetManager:
 
         self.nodes: Dict[str, VirtualSensorNode] = {}
         self.active_node_ids: set = set()
+        self._waveform_node_ids: set = set()
 
         # Active earthquake event
         self.active_event: Optional[SeismicEvent] = None
@@ -71,9 +72,11 @@ class FleetManager:
             "current_rps": 0.0,
             "active_nodes": 0,
             "triggered_nodes": 0,
+            "detecting_nodes": 0,
             "buffering_nodes": 0,
         }
         self._recent_requests_window: List[float] = []
+        self._recent_backfill_window: List[float] = []
         self._latest_waveform_samples: List[float] = []
 
         self._initialize_nodes()
@@ -98,7 +101,6 @@ class FleetManager:
             )
             self.nodes[node_id] = node
 
-        # Activate initial quota
         all_ids = list(self.nodes.keys())
         self.active_node_ids = set(all_ids[: self.target_node_count])
 
@@ -109,45 +111,62 @@ class FleetManager:
         all_ids = list(self.nodes.keys())
 
         if len(self.active_node_ids) < target:
-            # Add nodes
             inactive = [nid for nid in all_ids if nid not in self.active_node_ids]
             to_add = inactive[: target - len(self.active_node_ids)]
             self.active_node_ids.update(to_add)
             logger.info("Fleet scaled up to %d nodes (+%d joined)", len(self.active_node_ids), len(to_add))
         elif len(self.active_node_ids) > target:
-            # Remove nodes
-            to_remove = random.sample(list(self.active_node_ids), len(self.active_node_ids) - target)
+            to_remove_count = len(self.active_node_ids) - target
+            active_list = list(self.active_node_ids)
+            to_remove = set(random.sample(active_list, to_remove_count))
             self.active_node_ids.difference_update(to_remove)
+            for nid in to_remove:
+                self.nodes[nid].is_triggered = False
+                self.nodes[nid].is_detecting = False
             logger.info("Fleet scaled down to %d nodes (-%d left)", len(self.active_node_ids), len(to_remove))
 
     def trigger_earthquake(
         self,
         magnitude: float,
         epicenter_km: Tuple[float, float],
-        duration_s: float = 45.0,
+        duration_s: float = 55.0,
+        early_warning_delay_s: float = 1.5,
     ) -> SeismicEvent:
-        """Initiate an earthquake shockwave propagating across the city."""
+        """
+        Initiate an earthquake propagating physically outward:
+        P-wave arrives first (nodes turn Amber), S-wave follows (nodes turn Red).
+        """
+        for node in self.nodes.values():
+            node.is_triggered = False
+            node.is_detecting = False
+        self._waveform_node_ids.clear()
+
+        effective_duration = max(55.0, duration_s)
         sim_time = time.time() - self.sim_start_time
         self.active_event = SeismicEvent(
             magnitude=magnitude,
             epicenter_km=epicenter_km,
             start_time_s=sim_time,
-            duration_s=duration_s,
+            duration_s=effective_duration,
+            early_warning_delay_s=early_warning_delay_s,
         )
         logger.info(
-            "Earthquake triggered: M%.1f at coords (%.1f, %.1f)km, duration %.1fs",
+            "Seismic rupture initiated: M%.1f at (%.1f, %.1f)km, duration=%.1fs, trigger_radius=%.1fkm",
             magnitude,
             epicenter_km[0],
             epicenter_km[1],
-            duration_s,
+            effective_duration,
+            self.active_event.trigger_radius_km,
         )
         return self.active_event
 
     def clear_active_event(self):
         """Immediately ends active seismic shaking and returns fleet to quiescent baseline."""
         self.active_event = None
+        self._waveform_node_ids.clear()
         for node in self.nodes.values():
             node.is_triggered = False
+            node.is_detecting = False
         logger.info("Seismic event cleared. Fleet returned to quiescent mode.")
 
     def set_sector_network(self, sector: str, online: bool):
@@ -165,7 +184,28 @@ class FleetManager:
 
     def get_fleet_snapshot(self) -> Dict[str, Any]:
         """Provides status data for web dashboard and monitoring."""
-        triggered_count = sum(1 for nid in self.active_node_ids if self.nodes[nid].is_triggered)
+        self._update_rps()
+        sim_now = round(time.time() - self.sim_start_time, 2)
+
+        ev = self.active_event
+        early_warning_rem = 0.0
+        is_early_warning = False
+        if ev is not None:
+            early_warning_rem = round(max(0.0, ev.impact_time_s - sim_now), 1)
+            is_early_warning = early_warning_rem > 0.0
+
+        triggered_count = sum(
+            1 for nid in self.active_node_ids
+            if self.nodes[nid].is_triggered and self.nodes[nid].link_online
+        )
+        detecting_count = sum(
+            1 for nid in self.active_node_ids
+            if self.nodes[nid].is_detecting and not self.nodes[nid].is_triggered and self.nodes[nid].link_online
+        )
+        quiescent_count = sum(
+            1 for nid in self.active_node_ids
+            if not self.nodes[nid].is_triggered and not self.nodes[nid].is_detecting and self.nodes[nid].link_online
+        )
         buffering_count = sum(1 for nid in self.active_node_ids if not self.nodes[nid].link_online)
         total_buffered = sum(len(self.nodes[nid].offline_buffer) for nid in self.active_node_ids)
 
@@ -178,6 +218,8 @@ class FleetManager:
                     status = "buffering"
                 elif node.is_triggered:
                     status = "triggered"
+                elif node.is_detecting:
+                    status = "detecting"
                 else:
                     status = "quiescent"
 
@@ -191,81 +233,113 @@ class FleetManager:
                 "site": node.site,
             })
 
-        sim_now = round(time.time() - self.sim_start_time, 2)
         return {
             "sim_time_s": sim_now,
             "ingest_url": self.ingest_url,
             "target_fleet_size": self.target_node_count,
             "active_nodes_count": len(self.active_node_ids),
             "triggered_nodes_count": triggered_count,
+            "detecting_nodes_count": detecting_count,
+            "quiescent_nodes_count": quiescent_count,
             "buffering_nodes_count": buffering_count,
             "total_buffered_batches": total_buffered,
             "current_rps": round(self.stats["current_rps"], 1),
+            "backfill_rps": round(len(self._recent_backfill_window) / 2.0, 1),
             "stats": self.stats,
             "jitter_enabled": self.jitter_enabled,
-            "has_active_event": self.active_event is not None,
+            "has_active_event": ev is not None,
             "active_event": {
-                "magnitude": self.active_event.magnitude,
-                "epicenter": self.active_event.epicenter_km,
-                "start_time_s": self.active_event.start_time_s,
-                "duration_s": self.active_event.duration_s,
-            } if self.active_event else None,
+                "magnitude": ev.magnitude,
+                "epicenter": ev.epicenter_km,
+                "start_time_s": ev.start_time_s,
+                "impact_time_s": ev.impact_time_s,
+                "early_warning_delay_s": ev.early_warning_delay_s,
+                "early_warning_remaining_s": early_warning_rem,
+                "is_early_warning": is_early_warning,
+                "duration_s": ev.duration_s,
+                "trigger_radius_km": ev.trigger_radius_km,
+                "p_velocity_km_s": ev.p_velocity_km_s,
+                "s_velocity_km_s": ev.s_velocity_km_s,
+            } if ev else None,
             "latest_waveform": self._latest_waveform_samples[-60:] if self._latest_waveform_samples else [],
             "nodes": nodes_summary,
         }
 
-    async def _node_waveform_loop(self, node: VirtualSensorNode):
-        """Fast-rate loop running while node is triggered (10 batches/sec)."""
-        while self.is_running and node.node_id in self.active_node_ids and node.is_triggered:
-            if not self.active_event:
-                node.is_triggered = False
-                break
-            sim_time = time.time() - self.sim_start_time
-            if sim_time > (self.active_event.start_time_s + self.active_event.duration_s + 2.0):
-                node.is_triggered = False
-                break
-            batch, peak_g = node.generate_waveform_batch(sim_time, self.active_event)
-            if batch.waveform and batch.waveform.samples:
-                self._latest_waveform_samples = [s.z for s in batch.waveform.samples[-40:]]
-            
-            if self.session:
-                res = await node.emit_batch(self.session, batch, self.ingest_url)
-                self._record_result(res, is_waveform=True)
+    async def _node_waveform_loop(self, node: VirtualSensorNode, event_end_s: float):
+        """Emits raw waveform bursts to Azure AKS while the S-wave is shaking this station."""
+        try:
+            while self.is_running and node.node_id in self.active_node_ids and self.active_event is not None:
+                sim_time = time.time() - self.sim_start_time
+                if sim_time > event_end_s:
+                    node.is_triggered = False
+                    node.is_detecting = False
+                    break
 
-            # 100ms interval = 10 req/s
-            await asyncio.sleep(0.1)
+                node.is_triggered = True
+                node.is_detecting = False
+
+                batch, _ = node.generate_waveform_batch(sim_time, self.active_event)
+                if batch.waveform and batch.waveform.samples:
+                    self._latest_waveform_samples = [s.z for s in batch.waveform.samples[-40:]]
+
+                if self.session:
+                    res = await node.emit_batch(self.session, batch, self.ingest_url)
+                    self._record_result(res, is_waveform=True)
+
+                await asyncio.sleep(0.40)
+        finally:
+            node.is_triggered = False
+            node.is_detecting = False
+            self._waveform_node_ids.discard(node.node_id)
 
     async def _node_tick(self, node: VirtualSensorNode, current_sim_time: float):
-        """Periodic tick evaluating trigger state and summary emission."""
+        """Periodic tick evaluating physical wave arrival and summary emission."""
         if not self.is_running or node.node_id not in self.active_node_ids:
             return
 
-        # 1. Check if node should trigger on seismic wave
-        if self.active_event is not None and not node.is_triggered:
-            epi_dist = node.generator.calculate_distance_km(self.active_event.epicenter_km)
-            hypo_dist = math.sqrt(epi_dist ** 2 + self.active_event.depth_km ** 2)
-            t_arrival_p = self.active_event.start_time_s + (hypo_dist / self.active_event.p_velocity_km_s)
-            event_end = self.active_event.start_time_s + self.active_event.duration_s + 2.0
+        # 1. Seismic wave propagation evaluation
+        if self.active_event is not None:
+            ev = self.active_event
+            epi_dist = node.generator.calculate_distance_km(ev.epicenter_km)
+            t_p = ev.start_time_s + (epi_dist / ev.p_velocity_km_s)
+            t_s = ev.impact_time_s + (epi_dist / ev.s_velocity_km_s)
+            local_pga = ev.local_pga_at_distance(epi_dist, node.soil_amplification)
+            event_end = t_s + ev.duration_s
 
-            if current_sim_time >= t_arrival_p and current_sim_time <= event_end:
-                # Check if physical ground acceleration exceeds trigger threshold
-                _, _, _, peak_g, _ = node.generator.generate_window(
-                    start_sim_time_s=current_sim_time,
-                    sample_count=100,
-                    active_event=self.active_event,
-                )
-                if peak_g >= SEISMIC_TRIGGER_THRESHOLD_G:
+            if current_sim_time < t_p:
+                # Wave has not reached this sensor yet: Quiescent (Green)
+                node.is_detecting = False
+                node.is_triggered = False
+
+            elif t_p <= current_sim_time < t_s:
+                # P-wave has arrived! Precursor micro-tremor detection: Amber
+                node.is_detecting = True
+                node.is_triggered = False
+
+            elif t_s <= current_sim_time <= event_end:
+                # S-wave has arrived!
+                node.is_detecting = False
+                if local_pga >= SEISMIC_TRIGGER_THRESHOLD_G:
+                    # Shaking exceeds 0.05g -> Station triggers into RED burst mode
                     node.is_triggered = True
-                    asyncio.create_task(self._node_waveform_loop(node))
-                    return
+                    if node.node_id not in self._waveform_node_ids:
+                        self._waveform_node_ids.add(node.node_id)
+                        asyncio.create_task(self._node_waveform_loop(node, event_end))
+                        return
+                else:
+                    # Distant / minor tremor below trigger threshold -> settles back to Green
+                    node.is_triggered = False
 
-        # 2. Quiescent Summary Mode
+            else:
+                # Event ended at this station
+                node.is_detecting = False
+                node.is_triggered = False
+
+        # 2. Quiescent Summary Mode (when station is not bursting waveforms)
         if not node.is_triggered:
-            # Calculate interval with jitter
             offset = node.jitter_offset_s if node.jitter_enabled else 0.0
             second_in_cycle = (current_sim_time + offset) % 60.0
 
-            # Emit summary packet within a 1-second slot of its 60s cycle
             if second_in_cycle < 1.0:
                 batch = node.generate_summary_batch(current_sim_time)
                 if self.session:
@@ -276,8 +350,12 @@ class FleetManager:
         if node.link_online and node.offline_buffer and self.session:
             flushed = await node.flush_backlog(self.session, self.ingest_url, max_batches=10)
             if flushed > 0:
+                now = time.time()
                 self.stats["backfill_sent"] += flushed
                 self.stats["total_sent"] += flushed
+                for _ in range(flushed):
+                    self._recent_requests_window.append(now)
+                    self._recent_backfill_window.append(now)
 
     def _record_result(self, res: Dict[str, Any], is_waveform: bool):
         """Updates internal fleet statistics counters."""
@@ -299,9 +377,9 @@ class FleetManager:
     def _update_rps(self):
         """Calculates moving window requests per second."""
         now = time.time()
-        # Keep only events from the last 2 seconds
         cutoff = now - 2.0
         self._recent_requests_window = [t for t in self._recent_requests_window if t >= cutoff]
+        self._recent_backfill_window = [t for t in self._recent_backfill_window if t >= cutoff]
         self.stats["current_rps"] = len(self._recent_requests_window) / 2.0
 
     async def run(self):
@@ -309,7 +387,6 @@ class FleetManager:
         self.is_running = True
         self.sim_start_time = time.time()
 
-        # Create high-capacity TCP connector to avoid client-side connection starvation
         connector = aiohttp.TCPConnector(
             limit=1000,
             limit_per_host=1000,
@@ -324,18 +401,18 @@ class FleetManager:
                 sim_time = time.time() - self.sim_start_time
                 self._update_rps()
 
-                # Auto-clear earthquake event after duration expires
-                if self.active_event and sim_time > (self.active_event.start_time_s + self.active_event.duration_s + 2.0):
-                    logger.info("Earthquake duration completed (%.1fs). Returning fleet to quiescent baseline.", self.active_event.duration_s)
-                    self.clear_active_event()
+                if self.active_event:
+                    ev = self.active_event
+                    max_event_end = ev.impact_time_s + (48.0 / ev.s_velocity_km_s) + ev.duration_s + 2.0
+                    if sim_time > max_event_end:
+                        logger.info("Earthquake wave propagation completed. Returning fleet to quiescent baseline.")
+                        self.clear_active_event()
 
-                # Process all active nodes
                 active_nodes = [self.nodes[nid] for nid in list(self.active_node_ids)]
-                # Run ticks concurrently
                 tasks = [self._node_tick(node, sim_time) for node in active_nodes]
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.4)
 
     def stop(self):
         """Stop the fleet manager runner."""

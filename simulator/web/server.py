@@ -86,7 +86,12 @@ async def get_snapshot():
     if not fleet_manager:
         return {"error": "Fleet manager not initialized"}
     snapshot = fleet_manager.get_fleet_snapshot()
-    snapshot["cluster"] = cluster_model.tick(snapshot.get("current_rps", 0.0), dt=0.1)
+    snapshot["cluster"] = cluster_model.tick(
+        current_rps=snapshot.get("current_rps", 0.0),
+        dt=0.1,
+        triggered_nodes=snapshot.get("triggered_nodes_count", 0),
+        backfill_rps=snapshot.get("backfill_rps", 0.0),
+    )
     if scenario_controller:
         snapshot["scenario"] = scenario_controller.get_status()
     return snapshot
@@ -198,10 +203,21 @@ async def broadcast_telemetry_loop():
         try:
             if fleet_manager:
                 sim_time = time.time() - fleet_manager.sim_start_time
+                fleet_manager._update_rps()
                 current_rps = fleet_manager.stats.get("current_rps", 0.0)
+                triggered_online = sum(
+                    1 for nid in fleet_manager.active_node_ids
+                    if fleet_manager.nodes[nid].is_triggered and fleet_manager.nodes[nid].link_online
+                )
+                backfill_rps = len(fleet_manager._recent_backfill_window) / 2.0
 
                 # Tick cluster autoscaling model
-                cluster_state = cluster_model.tick(current_rps=current_rps, dt=0.1)
+                cluster_state = cluster_model.tick(
+                    current_rps=current_rps,
+                    dt=0.1,
+                    triggered_nodes=triggered_online,
+                    backfill_rps=backfill_rps,
+                )
 
                 if active_client_subscriptions:
                     # 1. Seismograph Wave Stream (10 Hz)
