@@ -60,90 +60,91 @@ class SeismicAudioEngine {
         this.rumbleGain.connect(this.filter);
         this.noiseNode.start(0);
 
-        // Sub-bass tectonic oscillator
+        // Sub-bass tectonic sine tone (42 Hz)
         this.subOsc = this.ctx.createOscillator();
         this.subOsc.type = "sine";
         this.subOsc.frequency.setValueAtTime(42, this.ctx.currentTime);
-
-        const subGain = this.ctx.createGain();
-        subGain.gain.setValueAtTime(0.35, this.ctx.currentTime);
-        this.subOsc.connect(subGain);
-        subGain.connect(this.filter);
+        this.subOsc.connect(this.rumbleGain);
         this.subOsc.start(0);
     }
 
-    setEnabled(enabled) {
-        this.enabled = enabled;
-        if (enabled && !this.ctx) {
-            this.init();
-        }
+    toggle() {
+        this.init();
         if (this.ctx && this.ctx.state === "suspended") {
             this.ctx.resume();
         }
-        if (this.masterGain) {
-            const now = this.ctx.currentTime;
-            this.masterGain.gain.cancelScheduledValues(now);
-            this.masterGain.gain.setTargetAtTime(enabled ? 0.8 : 0.0, now, 0.05);
+        this.enabled = !this.enabled;
+        if (this.masterGain && this.ctx) {
+            this.masterGain.gain.setValueAtTime(this.enabled ? 0.8 : 0.0, this.ctx.currentTime);
         }
-    }
-
-    /**
-     * Play 10-second Early Warning sonar pings before S-wave surface impact
-     */
-    triggerEarlyWarning(magnitude = 6.0, delaySeconds = 10.0) {
-        this.clearWarningTimers();
-        if (!this.enabled || !this.ctx) return;
-        if (this.ctx.state === "suspended") this.ctx.resume();
-
-        const steps = Math.floor(delaySeconds);
-        for (let i = 0; i < steps; i++) {
-            const rem = steps - i;
-            const tId = setTimeout(() => {
-                if (!this.enabled || !this.ctx) return;
-                const now = this.ctx.currentTime;
-                const beepOsc = this.ctx.createOscillator();
-                const beepGain = this.ctx.createGain();
-                beepOsc.type = "sine";
-                // Pitch rises on final 3 seconds for urgency
-                const freq = rem <= 3 ? 880 : 660;
-                beepOsc.frequency.setValueAtTime(freq, now);
-
-                beepGain.gain.setValueAtTime(0.18, now);
-                beepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-
-                beepOsc.connect(beepGain);
-                beepGain.connect(this.masterGain);
-                beepOsc.start(now);
-                beepOsc.stop(now + 0.18);
-            }, i * 1000);
-            this.warningTimeouts.push(tId);
+        if (!this.enabled) {
+            this.clearWarningTimers();
         }
-
-        const impactTimer = setTimeout(() => {
-            this.triggerEarthquake(magnitude);
-        }, delaySeconds * 1000);
-        this.warningTimeouts.push(impactTimer);
+        return this.enabled;
     }
 
     clearWarningTimers() {
-        if (this.warningTimeouts && this.warningTimeouts.length > 0) {
-            for (const t of this.warningTimeouts) clearTimeout(t);
-            this.warningTimeouts = [];
+        for (const t of this.warningTimeouts) {
+            clearTimeout(t);
+        }
+        this.warningTimeouts = [];
+    }
+
+    /**
+     * Trigger Early Warning audible siren pulses followed by destructive S-wave rumble.
+     */
+    triggerEarlyWarning(magnitude, leadTimeSeconds = 1.5) {
+        if (!this.enabled || !this.ctx) return;
+        this.clearWarningTimers();
+
+        // Warning chime at rupture
+        this.playWarningPulse(880, 0.12);
+
+        // Schedule surface impact rumble at leadTimeSeconds
+        const impactTimer = setTimeout(() => {
+            this.startEarthquake(magnitude);
+        }, Math.max(0, leadTimeSeconds * 1000));
+        this.warningTimeouts.push(impactTimer);
+    }
+
+    /**
+     * Synthesize clean civil defense early warning beep tone
+     */
+    playWarningPulse(freq = 880, dur = 0.12) {
+        if (!this.enabled || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(freq, now);
+
+            gain.gain.setValueAtTime(0.0, now);
+            gain.gain.linearRampToValueAtTime(0.35, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+            osc.connect(gain);
+            gain.connect(this.masterGain);
+
+            osc.start(now);
+            osc.stop(now + dur + 0.05);
+        } catch (e) {
+            console.error("Warning tone error:", e);
         }
     }
 
     /**
-     * Trigger shockwave arrival impact & start rumble
-     * @param {number} magnitude Richter magnitude (3.0 - 7.5)
+     * High-energy shockwave arrival: thump impulse + continuous building rumble
      */
-    triggerEarthquake(magnitude = 6.0) {
+    startEarthquake(magnitude) {
         if (!this.enabled || !this.ctx) return;
-        if (this.ctx.state === "suspended") this.ctx.resume();
+        this.clearWarningTimers();
 
+        const intensity = Math.min(1.0, Math.max(0.2, (magnitude - 3.5) / 3.5));
         const now = this.ctx.currentTime;
-        const intensity = Math.min(1.0, Math.max(0.2, (magnitude - 3.0) / 4.0));
 
-        // 1. Initial shockwave arrival impact (low frequency thump)
+        // 1. Initial Shockwave Thump
         const thumpOsc = this.ctx.createOscillator();
         const thumpGain = this.ctx.createGain();
         thumpOsc.type = "sine";
@@ -164,14 +165,12 @@ class SeismicAudioEngine {
         this.rumbleGain.gain.linearRampToValueAtTime(intensity * 0.75, now + 1.2);
         this.filter.frequency.linearRampToValueAtTime(60 + intensity * 60, now + 1.5);
 
-        // Dynamic frequency modulation
         this.subOsc.frequency.setValueAtTime(38 + intensity * 6, now);
         this.isRumbling = true;
     }
 
     /**
      * Update shaking sound level from real-time peak ground acceleration
-     * @param {number} pga Ground acceleration in g
      */
     updateShakeLevel(pga) {
         if (!this.enabled || !this.ctx || !this.isRumbling) return;
@@ -190,4 +189,7 @@ class SeismicAudioEngine {
     }
 }
 
+// Global class exports and default instance
+window.SeismicAudioEngine = SeismicAudioEngine;
+window.SeismicAudio = SeismicAudioEngine;
 window.seismicAudio = new SeismicAudioEngine();

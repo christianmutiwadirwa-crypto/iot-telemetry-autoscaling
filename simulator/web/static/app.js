@@ -19,7 +19,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     const seismo = new Seismograph("seismo-canvas");
-    window.seismicAudio = new SeismicAudio();
+    
+    // Safely initialize or reference seismicAudio
+    if (!window.seismicAudio) {
+        if (typeof SeismicAudioEngine !== "undefined") {
+            window.seismicAudio = new SeismicAudioEngine();
+        } else if (typeof SeismicAudio !== "undefined") {
+            window.seismicAudio = new SeismicAudio();
+        }
+    }
 
     let currentEpicenter = [0.0, 0.0];
     let isSectorBCut = false;
@@ -38,13 +46,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // 3. Audio Toggle
     const soundBtn = document.getElementById("btn-sound-toggle");
-    soundBtn.addEventListener("click", () => {
-        const enabled = window.seismicAudio.toggle();
-        soundBtn.classList.toggle("btn-outline", !enabled);
-        soundBtn.classList.toggle("btn-active", enabled);
-        document.getElementById("sound-label").textContent = enabled ? "Sound on" : "Sound off";
-        soundBtn.querySelector(".sound-icon").textContent = enabled ? "🔊" : "🔇";
-    });
+    if (soundBtn) {
+        soundBtn.addEventListener("click", () => {
+            if (!window.seismicAudio) return;
+            const enabled = window.seismicAudio.toggle();
+            soundBtn.classList.toggle("btn-outline", !enabled);
+            soundBtn.classList.toggle("btn-active", enabled);
+            document.getElementById("sound-label").textContent = enabled ? "Sound on" : "Sound off";
+            soundBtn.querySelector(".sound-icon").textContent = enabled ? "🔊" : "🔇";
+        });
+    }
 
     // 4. WebSocket Streaming Connection
     function connectWebSocket() {
@@ -242,7 +253,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     duration_s: 55.0,
                 }),
             });
-            if (resp.ok) {
+            if (resp.ok && window.seismicAudio) {
                 window.seismicAudio.triggerEarlyWarning(magnitude, 1.5);
             }
         } catch (e) {
@@ -274,7 +285,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("btn-clear-quake").addEventListener("click", async () => {
         try {
             await fetch("/api/scenario/clear", { method: "POST" });
-            window.seismicAudio.stopEarthquake();
+            if (window.seismicAudio) {
+                window.seismicAudio.stopEarthquake();
+            }
         } catch (e) {
             console.error("Failed to clear quake:", e);
         }
@@ -296,7 +309,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    // Sector Navigation Views
+    // Sector Navigation Views (Coordinates matched to 50km x 24km layout)
     const sectorViews = {
         all: { x: 0.0, y: 0.0, z: 1.0 },
         A: { x: 0.0, y: 0.0, z: 2.5 },       // Downtown
