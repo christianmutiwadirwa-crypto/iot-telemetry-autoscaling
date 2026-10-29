@@ -250,7 +250,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     magnitude: magnitude,
                     epicenter_x: epicenter[0],
                     epicenter_y: epicenter[1],
-                    duration_s: 55.0,
+                    duration_s: 90.0,
                 }),
             });
             if (resp.ok && window.seismicAudio) {

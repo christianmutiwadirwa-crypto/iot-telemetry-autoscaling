@@ -54,7 +54,7 @@ class EarthquakeRequest(BaseModel):
     magnitude: float = 6.5
     epicenter_x: float = 0.0
     epicenter_y: float = 0.3
-    duration_s: float = 45.0
+    duration_s: float = 90.0
 
 
 class NetworkCutRequest(BaseModel):

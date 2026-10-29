@@ -27,7 +27,7 @@ class SeismicEvent:
         magnitude: float,
         epicenter_km: Tuple[float, float],
         start_time_s: float,
-        duration_s: float = 55.0,
+        duration_s: float = 90.0,
         depth_km: float = 3.0,
         early_warning_delay_s: float = 15.0,
     ):

@@ -129,7 +129,7 @@ class FleetManager:
         self,
         magnitude: float,
         epicenter_km: Tuple[float, float],
-        duration_s: float = 55.0,
+        duration_s: float = 90.0,
         early_warning_delay_s: float = 15.0,
     ) -> SeismicEvent:
         """
@@ -141,7 +141,7 @@ class FleetManager:
             node.is_detecting = False
         self._waveform_node_ids.clear()
 
-        effective_duration = max(55.0, duration_s)
+        effective_duration = max(90.0, duration_s)
         sim_time = time.time() - self.sim_start_time
         self.active_event = SeismicEvent(
             magnitude=magnitude,
