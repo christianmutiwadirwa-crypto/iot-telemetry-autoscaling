@@ -20,7 +20,7 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 60
+          averageUtilization: 30
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
@@ -33,11 +33,15 @@ spec:
           periodSeconds: 15
       selectPolicy: Max
     scaleDown:
-      stabilizationWindowSeconds: 300
+      stabilizationWindowSeconds: 15
       policies:
         - type: Percent
-          value: 20
-          periodSeconds: 60
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
 
 ---
 apiVersion: autoscaling/v2
@@ -58,7 +62,7 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 60
+          averageUtilization: 30
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
@@ -71,8 +75,12 @@ spec:
           periodSeconds: 15
       selectPolicy: Max
     scaleDown:
-      stabilizationWindowSeconds: 300
+      stabilizationWindowSeconds: 15
       policies:
         - type: Percent
-          value: 20
-          periodSeconds: 60
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max

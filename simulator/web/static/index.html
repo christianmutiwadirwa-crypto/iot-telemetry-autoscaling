@@ -137,19 +137,41 @@
 
             <!-- Right: Cluster Telemetry (AKS) -->
             <div class="panel cluster-panel">
-                <div class="panel-header">
+                <div class="panel-header" style="display: flex; align-items: center; gap: 8px;">
                     <h2 class="panel-title">Cluster telemetry (AKS)</h2>
                     <span class="hpa-badge" id="cluster-status-badge">stable</span>
+                    <a href="http://20.239.98.104:3000/d/city-seismic-pipeline/city-seismic-telemetry-and-autoscaling-pipeline" target="_blank" class="btn btn-sm btn-outline" style="margin-left: auto; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); text-decoration: none; padding: 3px 8px; font-size: 0.72rem; display: flex; align-items: center; gap: 4px;">📊 Open Grafana ↗</a>
                 </div>
 
                 <div class="cluster-body">
-                    <!-- Pod scaling -->
+                    <!-- Ingest API Pod Scaling -->
                     <div class="cluster-row">
                         <div class="row-header">
-                            <span class="row-label">Ingest and processor pods</span>
-                            <span class="row-val" id="cluster-pods-val">2 / 10</span>
+                            <span class="row-label">Ingest API pods (HPA)</span>
+                            <span class="row-val" id="ingest-pods-val">2 / 10</span>
                         </div>
-                        <div class="pod-bar" id="pod-segments">
+                        <div class="pod-bar" id="ingest-pod-segments">
+                            <!-- 10 segments populated dynamically -->
+                            <div class="pod-seg active"></div>
+                            <div class="pod-seg active"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                            <div class="pod-seg"></div>
+                        </div>
+                    </div>
+
+                    <!-- Processor Worker Pod Scaling -->
+                    <div class="cluster-row">
+                        <div class="row-header">
+                            <span class="row-label">Processor worker pods (HPA)</span>
+                            <span class="row-val" id="processor-pods-val">2 / 10</span>
+                        </div>
+                        <div class="pod-bar" id="processor-pod-segments">
                             <!-- 10 segments populated dynamically -->
                             <div class="pod-seg active"></div>
                             <div class="pod-seg active"></div>

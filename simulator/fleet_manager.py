@@ -24,6 +24,7 @@ from simulator.config import (
     DEFAULT_INGEST_URL,
     SECTOR_INFO,
     TOTAL_NODES,
+    SEISMIC_TRIGGER_THRESHOLD_G,
 )
 from simulator.virtual_device import VirtualSensorNode
 from simulator.waveform_generator import SeismicEvent
@@ -123,7 +124,7 @@ class FleetManager:
         self,
         magnitude: float,
         epicenter_km: Tuple[float, float],
-        duration_s: float = 30.0,
+        duration_s: float = 45.0,
     ) -> SeismicEvent:
         """Initiate an earthquake shockwave propagating across the city."""
         sim_time = time.time() - self.sim_start_time
@@ -216,7 +217,13 @@ class FleetManager:
     async def _node_waveform_loop(self, node: VirtualSensorNode):
         """Fast-rate loop running while node is triggered (10 batches/sec)."""
         while self.is_running and node.node_id in self.active_node_ids and node.is_triggered:
+            if not self.active_event:
+                node.is_triggered = False
+                break
             sim_time = time.time() - self.sim_start_time
+            if sim_time > (self.active_event.start_time_s + self.active_event.duration_s + 2.0):
+                node.is_triggered = False
+                break
             batch, peak_g = node.generate_waveform_batch(sim_time, self.active_event)
             if batch.waveform and batch.waveform.samples:
                 self._latest_waveform_samples = [s.z for s in batch.waveform.samples[-40:]]
@@ -235,16 +242,22 @@ class FleetManager:
 
         # 1. Check if node should trigger on seismic wave
         if self.active_event is not None and not node.is_triggered:
-            # Check instantaneous acceleration
-            _, _, _, peak_g, _ = node.generator.generate_window(
-                start_sim_time_s=current_sim_time,
-                sample_count=100,
-                active_event=self.active_event,
-            )
-            if peak_g >= 0.05:
-                node.is_triggered = True
-                asyncio.create_task(self._node_waveform_loop(node))
-                return
+            epi_dist = node.generator.calculate_distance_km(self.active_event.epicenter_km)
+            hypo_dist = math.sqrt(epi_dist ** 2 + self.active_event.depth_km ** 2)
+            t_arrival_p = self.active_event.start_time_s + (hypo_dist / self.active_event.p_velocity_km_s)
+            event_end = self.active_event.start_time_s + self.active_event.duration_s + 2.0
+
+            if current_sim_time >= t_arrival_p and current_sim_time <= event_end:
+                # Check if physical ground acceleration exceeds trigger threshold
+                _, _, _, peak_g, _ = node.generator.generate_window(
+                    start_sim_time_s=current_sim_time,
+                    sample_count=100,
+                    active_event=self.active_event,
+                )
+                if peak_g >= SEISMIC_TRIGGER_THRESHOLD_G:
+                    node.is_triggered = True
+                    asyncio.create_task(self._node_waveform_loop(node))
+                    return
 
         # 2. Quiescent Summary Mode
         if not node.is_triggered:
@@ -310,6 +323,11 @@ class FleetManager:
             while self.is_running:
                 sim_time = time.time() - self.sim_start_time
                 self._update_rps()
+
+                # Auto-clear earthquake event after duration expires
+                if self.active_event and sim_time > (self.active_event.start_time_s + self.active_event.duration_s + 2.0):
+                    logger.info("Earthquake duration completed (%.1fs). Returning fleet to quiescent baseline.", self.active_event.duration_s)
+                    self.clear_active_event()
 
                 # Process all active nodes
                 active_nodes = [self.nodes[nid] for nid in list(self.active_node_ids)]

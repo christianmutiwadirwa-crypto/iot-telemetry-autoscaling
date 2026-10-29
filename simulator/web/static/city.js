@@ -180,10 +180,10 @@ class MetroMap {
         if (isNaN(this.zoom)) this.zoom = 1.0;
         if (isNaN(this.targetZoom)) this.targetZoom = 1.0;
 
-        const minX = -16.0;
-        const maxX = 16.0;
-        const minY = -10.0;
-        const maxY = 10.0;
+        const minX = -18.0;
+        const maxX = 17.5;
+        const minY = -11.5;
+        const maxY = 11.5;
         this.centerX = Math.max(minX, Math.min(maxX, this.centerX));
         this.centerY = Math.max(minY, Math.min(maxY, this.centerY));
         this.targetCenterX = Math.max(minX, Math.min(maxX, this.targetCenterX));
@@ -733,41 +733,78 @@ class MetroMap {
         const epicenter = ev.epicenter || [0, 0];
         const sc = this.worldToScreen(epicenter[0], epicenter[1]);
         const scale = this.getKmToPixelRatio();
+        const duration = ev.duration_s || 45.0;
 
         // Calculate wave front propagation distances
         const age = Math.max(0.0, this.simTimeS - ev.start_time_s);
         const pRadiusKm = age * 6.0; // P-wave @ 6 km/s
         const sRadiusKm = age * 3.5; // S-wave @ 3.5 km/s
 
-        // 1. Epicenter Marker
+        // 1. Epicenter Marker with pulsing beacon
+        const epiPulse = (performance.now() % 1000) / 1000;
+        ctx.save();
         ctx.fillStyle = "#ef4444";
+        ctx.shadowColor = "#ef4444";
+        ctx.shadowBlur = 12;
         ctx.beginPath();
-        ctx.arc(sc.x, sc.y, 5, 0, Math.PI * 2);
+        ctx.arc(sc.x, sc.y, 6, 0, Math.PI * 2);
         ctx.fill();
 
-        // 2. Expanding P-wave (amber, precursor)
-        if (pRadiusKm > 0 && pRadiusKm < 35.0) {
-            const rPx = pRadiusKm * scale;
-            ctx.strokeStyle = "rgba(251, 191, 36, 0.4)";
-            ctx.lineWidth = 2;
-            ctx.setLineDash([4, 4]);
-            ctx.beginPath();
-            ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.setLineDash([]);
+        ctx.strokeStyle = `rgba(239, 68, 68, ${1.0 - epiPulse})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sc.x, sc.y, 6 + epiPulse * 18, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Trailing concentric reverberation waves (propagating ripples)
+        const ripplePeriod = 2.5; // New wave ring every 2.5 seconds
+        const maxRipples = Math.min(10, Math.floor(Math.min(age, duration) / ripplePeriod));
+        for (let i = 1; i <= maxRipples; i++) {
+            const ringAge = age - i * ripplePeriod;
+            if (ringAge > 0) {
+                const ringRadiusKm = ringAge * 3.5;
+                if (ringRadiusKm > 0 && ringRadiusKm < 42.0) {
+                    const rPx = ringRadiusKm * scale;
+                    const alpha = Math.max(0.05, 0.45 * (1.0 - ringRadiusKm / 42.0));
+                    ctx.save();
+                    ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+                    ctx.lineWidth = 1.8;
+                    ctx.beginPath();
+                    ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
         }
 
-        // 3. Expanding S-wave (red, main shockwave burst)
-        if (sRadiusKm > 0 && sRadiusKm < 30.0) {
+        // 3. Expanding Leading S-wave (bright neon red, main shockwave burst)
+        if (sRadiusKm > 0 && sRadiusKm < 45.0) {
             const rPx = sRadiusKm * scale;
-            ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";
-            ctx.lineWidth = 3;
+            const sAlpha = Math.max(0.2, 0.9 * (1.0 - sRadiusKm / 50.0));
+            ctx.save();
+            ctx.strokeStyle = `rgba(239, 68, 68, ${sAlpha})`;
+            ctx.lineWidth = 3.5;
             ctx.shadowColor = "#ef4444";
-            ctx.shadowBlur = 10;
+            ctx.shadowBlur = 14;
             ctx.beginPath();
             ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
             ctx.stroke();
-            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // 4. Expanding P-wave (amber dashed precursor wave @ 6 km/s)
+        if (pRadiusKm > 0 && pRadiusKm < 48.0) {
+            const rPx = pRadiusKm * scale;
+            const pAlpha = Math.max(0.15, 0.5 * (1.0 - pRadiusKm / 50.0));
+            ctx.save();
+            ctx.strokeStyle = `rgba(251, 191, 36, ${pAlpha})`;
+            ctx.lineWidth = 2.0;
+            ctx.setLineDash([6, 6]);
+            ctx.beginPath();
+            ctx.arc(sc.x, sc.y, rPx, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
         }
     }
 

@@ -27,9 +27,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
         },
         onSetEpicenter: (wx, wy) => {
-            currentEpicenter = [Math.round(wx * 10) / 10, Math.round(wy * 10) / 10];
-            // If earthquake already ongoing, update it immediately
-            const mag = parseFloat(document.getElementById("slider-mag").value) || 6.5;
+            const clampedX = Math.max(-17.5, Math.min(17.0, wx));
+            const clampedY = Math.max(-11.0, Math.min(11.0, wy));
+            currentEpicenter = [Math.round(clampedX * 10) / 10, Math.round(clampedY * 10) / 10];
+            const sliderEl = document.getElementById("slider-mag");
+            const mag = parseFloat(sliderEl.value) || 6.5;
             triggerEarthquake(mag, currentEpicenter);
         },
     });
@@ -152,31 +154,44 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Cluster Telemetry (AKS)
         if (snap.cluster) {
             const cl = snap.cluster;
-            document.getElementById("cluster-pods-val").textContent = `${cl.ready_pods} / ${cl.max_pods}`;
             document.getElementById("cluster-status-badge").textContent = cl.status;
 
-            // Update 10 pod segments
-            const podBar = document.getElementById("pod-segments");
-            const segs = podBar.children;
-            for (let i = 0; i < 10; i++) {
-                if (i < cl.ready_pods) {
-                    segs[i].className = "pod-seg active";
-                } else if (i < cl.replicas) {
-                    segs[i].className = "pod-seg starting";
-                } else {
-                    segs[i].className = "pod-seg";
+            function updateSegments(barId, ready, replicas) {
+                const bar = document.getElementById(barId);
+                if (!bar) return;
+                const segs = bar.children;
+                for (let i = 0; i < 10; i++) {
+                    if (i < ready) {
+                        segs[i].className = "pod-seg active";
+                    } else if (i < replicas) {
+                        segs[i].className = "pod-seg starting";
+                    } else {
+                        segs[i].className = "pod-seg";
+                    }
                 }
             }
 
-            // Queue depth meter (0 - 5000)
+            // Ingest API Pods (HPA)
+            const ing = cl.ingest || { ready_pods: cl.ready_pods, replicas: cl.replicas };
+            const ingVal = document.getElementById("ingest-pods-val");
+            if (ingVal) ingVal.textContent = `${ing.ready_pods} / 10`;
+            updateSegments("ingest-pod-segments", ing.ready_pods, ing.replicas);
+
+            // Processor Worker Pods (HPA)
+            const proc = cl.processor || { ready_pods: cl.ready_pods, replicas: cl.replicas };
+            const procVal = document.getElementById("processor-pods-val");
+            if (procVal) procVal.textContent = `${proc.ready_pods} / 10`;
+            updateSegments("processor-pod-segments", proc.ready_pods, proc.replicas);
+
+            // Queue depth meter (scaled to 250 for realistic visual feedback)
             document.getElementById("cluster-queue-val").textContent = cl.queue_depth.toLocaleString();
-            const queuePct = Math.min(100, (cl.queue_depth / 2000) * 100);
+            const queuePct = cl.queue_depth > 0 ? Math.max(6, Math.min(100, (cl.queue_depth / 250) * 100)) : 0;
             document.getElementById("meter-queue").style.width = `${queuePct}%`;
 
-            // DB writes meter (0 - 4500)
+            // DB writes meter (scaled to 200 writes/s for vivid dynamic movement)
             document.getElementById("cluster-db-val").textContent = cl.db_writes_per_sec.toLocaleString();
-            const dbPct = Math.min(100, (cl.db_writes_per_sec / 4000) * 100);
-            document.getElementById("meter-db").style.width = `${Math.max(4, dbPct)}%`;
+            const dbPct = cl.db_writes_per_sec > 0 ? Math.max(8, Math.min(100, (cl.db_writes_per_sec / 200) * 100)) : 4;
+            document.getElementById("meter-db").style.width = `${dbPct}%`;
         }
     }
 
@@ -190,7 +205,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                     magnitude: magnitude,
                     epicenter_x: epicenter[0],
                     epicenter_y: epicenter[1],
-                    duration_s: 30.0,
+                    duration_s: 45.0,
                 }),
             });
             if (resp.ok) {
@@ -202,7 +217,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     document.getElementById("btn-trigger-quake").addEventListener("click", () => {
-        const mag = parseFloat(document.getElementById("slider-mag").value) || 6.5;
+        const sliderEl = document.getElementById("slider-mag");
+        const mag = parseFloat(sliderEl.value) || 6.5;
         triggerEarthquake(mag, currentEpicenter);
     });
 
@@ -238,11 +254,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Sector quick zoom chips
     const sectorViews = {
         all: { x: 0.0, y: 0.0, z: 1.0 },
-        A: { x: 0.0, y: 0.3, z: 3.4 },       // Downtown
-        B: { x: 7.0, y: -5.0, z: 2.7 },      // Industrial & Port
-        C: { x: -6.2, y: 4.5, z: 2.3 },      // Kelvin Dam & Residential Hills
-        D: { x: 5.5, y: 5.5, z: 2.8 },       // Transit Corridor & Meadow Mall
-        E: { x: -8.2, y: -5.6, z: 2.3 },     // Suburban Ring
+        A: { x: 0.0, y: 0.0, z: 3.2 },       // Downtown
+        B: { x: 13.5, y: -6.5, z: 2.5 },     // Industrial & Port
+        C: { x: -12.5, y: 6.0, z: 2.5 },     // Kelvin Dam & Residential Hills
+        D: { x: 11.0, y: 6.5, z: 2.5 },      // Transit Corridor & Meadow Mall
+        E: { x: -11.5, y: -6.5, z: 2.5 },    // Suburban Ring
     };
 
     document.querySelectorAll(".sector-chips .chip").forEach((chip) => {

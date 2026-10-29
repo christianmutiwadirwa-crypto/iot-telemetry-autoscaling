@@ -54,7 +54,7 @@ class EarthquakeRequest(BaseModel):
     magnitude: float = 6.5
     epicenter_x: float = 0.0
     epicenter_y: float = 0.3
-    duration_s: float = 30.0
+    duration_s: float = 45.0
 
 
 class NetworkCutRequest(BaseModel):
@@ -253,6 +253,171 @@ async def broadcast_telemetry_loop():
             logger.error("Error in websocket broadcast: %s", e)
 
         await asyncio.sleep(0.1)
+
+
+def _fetch_aks_json():
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["kubectl", "--kubeconfig=.azure/kubeconfig", "get", "hpa,pods", "-n", "telemetry", "-o", "json"],
+            timeout=4.0,
+            stderr=subprocess.DEVNULL
+        )
+        return json.loads(out.decode())
+    except Exception:
+        return None
+
+def _fetch_rabbitmq_queue_depth():
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["kubectl", "--kubeconfig=.azure/kubeconfig", "exec", "-n", "telemetry", "rabbitmq-0",
+             "--", "rabbitmqctl", "list_queues", "-q", "name", "messages"],
+            timeout=4.0,
+            stderr=subprocess.DEVNULL
+        )
+        total_q = 0
+        for line in out.decode().splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[1].isdigit():
+                # Only count active in-flight queues, exclude dead-letter backlog
+                if parts[0] in ("telemetry.live", "telemetry.backfill"):
+                    total_q += int(parts[1])
+        return total_q
+    except Exception:
+        return None
+
+async def sync_live_aks_loop():
+    """Periodically queries Azure AKS HPA, Pods, and Ingest API to faithfully mirror real cloud metrics."""
+    import re
+    import time
+    last_ingest_count = None
+    last_ingest_time = None
+    queue_check_counter = 0
+    cached_queue_depth = 0
+
+    while True:
+        try:
+            kubeconfig = Path(".azure/kubeconfig")
+            if kubeconfig.exists():
+                # 1. Query real HPA and Pods JSON from AKS via thread pool
+                data = await asyncio.to_thread(_fetch_aks_json)
+                if data:
+                    items = data.get("items", [])
+                    hpas = [i for i in items if i.get("kind") == "HorizontalPodAutoscaler"]
+                    pods = [i for i in items if i.get("kind") == "Pod"]
+
+                    # 1. Parse HPAs
+                    ingest_hpa = next((h for h in hpas if "ingest-api" in h.get("metadata", {}).get("name", "")), None)
+                    processor_hpa = next((h for h in hpas if "processor" in h.get("metadata", {}).get("name", "")), None)
+
+                    def get_hpa_cpu(h):
+                        if not h: return None
+                        for m in h.get("status", {}).get("currentMetrics", []):
+                            u = m.get("resource", {}).get("current", {}).get("averageUtilization")
+                            if u is not None: return float(u)
+                        return None
+
+                    ingest_cpu = get_hpa_cpu(ingest_hpa)
+                    proc_cpu = get_hpa_cpu(processor_hpa)
+
+                    # 2. Parse Pods
+                    all_ingest_pods = [
+                        p for p in pods 
+                        if p.get("metadata", {}).get("labels", {}).get("app") == "ingest-api"
+                        and p.get("status", {}).get("phase") in ("Running", "Pending")
+                    ]
+                    all_proc_pods = [
+                        p for p in pods 
+                        if p.get("metadata", {}).get("labels", {}).get("app") == "processor"
+                        and p.get("status", {}).get("phase") in ("Running", "Pending")
+                    ]
+
+                    ingest_ready_cnt = sum(
+                        1 for p in all_ingest_pods 
+                        if any(c.get("type") == "Ready" and c.get("status") == "True" for c in p.get("status", {}).get("conditions", []))
+                    )
+                    proc_ready_cnt = sum(
+                        1 for p in all_proc_pods 
+                        if any(c.get("type") == "Ready" and c.get("status") == "True" for c in p.get("status", {}).get("conditions", []))
+                    )
+
+                    ingest_cur = ingest_hpa.get("status", {}).get("currentReplicas", len(all_ingest_pods)) if ingest_hpa else len(all_ingest_pods)
+                    ingest_des = ingest_hpa.get("status", {}).get("desiredReplicas", ingest_cur) if ingest_hpa else ingest_cur
+                    ingest_replicas = max(ingest_des, ingest_cur, len(all_ingest_pods), 2)
+                    ingest_ready = max(1, min(ingest_ready_cnt, ingest_replicas))
+                    ingest_starting = max(0, ingest_replicas - ingest_ready)
+
+                    proc_cur = processor_hpa.get("status", {}).get("currentReplicas", len(all_proc_pods)) if processor_hpa else len(all_proc_pods)
+                    proc_des = processor_hpa.get("status", {}).get("desiredReplicas", proc_cur) if processor_hpa else proc_cur
+                    proc_replicas = max(proc_des, proc_cur, len(all_proc_pods), 2)
+                    proc_ready = max(1, min(proc_ready_cnt, proc_replicas))
+                    proc_starting = max(0, proc_replicas - proc_ready)
+
+                    ingest_stats = {
+                        "replicas": ingest_replicas,
+                        "ready_pods": ingest_ready,
+                        "starting_pods": ingest_starting,
+                        "cpu_percent": ingest_cpu or 4.0,
+                    }
+                    processor_stats = {
+                        "replicas": proc_replicas,
+                        "ready_pods": proc_ready,
+                        "starting_pods": proc_starting,
+                        "cpu_percent": proc_cpu or 4.0,
+                    }
+
+                    # Overall cluster metrics
+                    live_replicas = max(ingest_replicas, proc_replicas)
+                    live_ready = max(ingest_ready, proc_ready)
+                    max_cpu = max(ingest_cpu or 0.0, proc_cpu or 0.0)
+
+                    # 3. Check RabbitMQ queue depth periodically
+                    queue_check_counter += 1
+                    if queue_check_counter >= 3:
+                        queue_check_counter = 0
+                        q_val = await asyncio.to_thread(_fetch_rabbitmq_queue_depth)
+                        if q_val is not None:
+                            cached_queue_depth = q_val
+
+                    # 4. Query Real Ingestion Rate from Azure Ingest API /metrics
+                    real_writes_sec = None
+                    try:
+                        import aiohttp
+                        async with aiohttp.ClientSession() as s:
+                            async with s.get("http://20.239.8.235:8000/metrics", timeout=aiohttp.ClientTimeout(total=2.0)) as m_resp:
+                                if m_resp.status == 200:
+                                    m_text = await m_resp.text()
+                                    total_ingest = 0
+                                    for line in m_text.splitlines():
+                                        if line.startswith("telemetry_ingest_requests_total"):
+                                            m_parts = line.split()
+                                            if len(m_parts) >= 2:
+                                                try:
+                                                    total_ingest += float(m_parts[1])
+                                                except ValueError:
+                                                    pass
+                                    now_t = time.time()
+                                    if last_ingest_count is not None and last_ingest_time is not None:
+                                        dt = max(0.5, now_t - last_ingest_time)
+                                        real_writes_sec = max(0, int((total_ingest - last_ingest_count) / dt))
+                                    last_ingest_count = total_ingest
+                                    last_ingest_time = now_t
+                    except Exception:
+                        pass
+
+                    cluster_model.update_live_cluster(
+                        replicas=live_replicas,
+                        ready_pods=live_ready,
+                        cpu_percent=max_cpu,
+                        queue_depth=cached_queue_depth,
+                        db_writes_per_sec=real_writes_sec,
+                        ingest_stats=ingest_stats,
+                        processor_stats=processor_stats,
+                    )
+        except Exception:
+            pass
+        await asyncio.sleep(1.5)
 
 
 # Static assets

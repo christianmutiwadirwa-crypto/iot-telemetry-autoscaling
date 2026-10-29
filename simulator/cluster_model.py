@@ -9,7 +9,7 @@ seismic spikes and graceful scale-in during post-quake quiescent periods.
 """
 
 import math
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class ClusterModel:
@@ -21,9 +21,9 @@ class ClusterModel:
         self,
         min_pods: int = 2,
         max_pods: int = 10,
-        pod_capacity_rps: float = 450.0,
+        pod_capacity_rps: float = 35.0,
         target_cpu_utilization: float = 0.60,
-        scale_in_stabilization_s: float = 60.0,
+        scale_in_stabilization_s: float = 15.0,
     ):
         self.min_pods = min_pods
         self.max_pods = max_pods
@@ -43,44 +43,122 @@ class ClusterModel:
         self.status: str = "stable"
 
         self.cooldown_timer: float = 0.0
+        self.live_aks_replicas: Optional[int] = None
+        self.live_aks_cpu: Optional[float] = None
+        self.live_aks_timestamp: float = 0.0
+        self.live_ingest: Dict[str, Any] = {"replicas": min_pods, "ready_pods": min_pods, "starting_pods": 0, "cpu_percent": 4.0}
+        self.live_processor: Dict[str, Any] = {"replicas": min_pods, "ready_pods": min_pods, "starting_pods": 0, "cpu_percent": 4.0}
+
+    def update_live_cluster(
+        self,
+        replicas: int,
+        ready_pods: Optional[int] = None,
+        cpu_percent: Optional[float] = None,
+        queue_depth: Optional[int] = None,
+        db_writes_per_sec: Optional[int] = None,
+        ingest_stats: Optional[Dict[str, Any]] = None,
+        processor_stats: Optional[Dict[str, Any]] = None,
+    ):
+        """Syncs live pod metrics directly from AKS HPA and cluster state."""
+        import time
+        self.live_aks_replicas = max(self.min_pods, min(self.max_pods, replicas))
+        if ready_pods is not None:
+            self.live_aks_ready_pods = max(1, min(self.max_pods, ready_pods))
+        else:
+            self.live_aks_ready_pods = self.live_aks_replicas
+        if cpu_percent is not None:
+            self.live_aks_cpu = cpu_percent
+        if queue_depth is not None:
+            self.live_aks_queue = queue_depth
+        if db_writes_per_sec is not None:
+            self.live_aks_db_writes = db_writes_per_sec
+        if ingest_stats is not None:
+            self.live_ingest = ingest_stats
+        if processor_stats is not None:
+            self.live_processor = processor_stats
+        self.live_aks_timestamp = time.time()
 
     def tick(self, current_rps: float, dt: float = 0.1) -> Dict[str, Any]:
         """
         Advance the cluster state by dt seconds given the current incoming requests/second.
+        When connected to live Azure AKS, faithfully mirrors the actual cloud state.
         """
-        # Calculate target pods required to maintain 60% CPU target
+        import time
+        is_live_aks = self.live_aks_replicas is not None and (time.time() - self.live_aks_timestamp < 15.0)
+
+        # 1. LIVE AKS MODE: Faithfully mirror what Azure is running
+        if is_live_aks and self.live_aks_replicas is not None:
+            self.replicas = self.live_aks_replicas
+            self.ready_pods = getattr(self, "live_aks_ready_pods", self.live_aks_replicas)
+            self.starting_pods = max(0, self.replicas - self.ready_pods)
+            if self.live_aks_cpu is not None:
+                self.cpu_percent = self.live_aks_cpu
+            if getattr(self, "live_aks_queue", None) is not None:
+                self.queue_depth = float(self.live_aks_queue)
+            else:
+                # Approximate queue buffering when incoming rps exceeds ready pod capacity
+                capacity = self.ready_pods * self.pod_capacity_rps
+                if current_rps > capacity:
+                    self.queue_depth += (current_rps - capacity) * dt
+                else:
+                    self.queue_depth = max(0.0, self.queue_depth - (capacity - current_rps) * dt)
+
+            if getattr(self, "live_aks_db_writes", None) is not None:
+                self.db_writes_per_sec = float(self.live_aks_db_writes)
+            else:
+                self.db_writes_per_sec = min(current_rps + (self.queue_depth * 0.2), self.ready_pods * self.pod_capacity_rps)
+
+            if self.starting_pods > 0:
+                self.status = "scaling out"
+            elif self.replicas > self.min_pods:
+                self.status = "scaled"
+            else:
+                self.status = "stable"
+
+            return {
+                "replicas": self.replicas,
+                "ready_pods": self.ready_pods,
+                "starting_pods": self.starting_pods,
+                "min_pods": self.min_pods,
+                "max_pods": self.max_pods,
+                "queue_depth": int(round(self.queue_depth)),
+                "db_writes_per_sec": int(round(self.db_writes_per_sec)),
+                "cpu_percent": round(self.cpu_percent, 1),
+                "status": self.status,
+                "ingest": self.live_ingest,
+                "processor": self.live_processor,
+            }
+
+        # 2. OFFLINE SIMULATION FALLBACK (when AKS is unreachable)
         effective_load_per_pod = self.pod_capacity_rps * self.target_cpu_utilization
-        if current_rps <= 0.0:
+        effective_demand_rps = current_rps + (self.queue_depth * 0.3)
+        if effective_demand_rps <= 0.0:
             desired_pods = self.min_pods
         else:
-            desired_pods = int(math.ceil(current_rps / effective_load_per_pod))
+            desired_pods = int(math.ceil(effective_demand_rps / effective_load_per_pod))
             desired_pods = max(self.min_pods, min(self.max_pods, desired_pods))
 
-        # Check scaling action
         if desired_pods > self.replicas:
-            # Scale-out triggered immediately (fast reaction)
             added = desired_pods - self.replicas
             self.replicas = desired_pods
             self.starting_pods += added
-            self.startup_timer = 5.0  # pods take 5s to boot
+            self.startup_timer = 1.5
             self.cooldown_timer = self.scale_in_stabilization_s
             self.status = "scaling out"
         elif desired_pods < self.replicas:
-            # Pod scale-down requires stabilization cooldown
             if self.cooldown_timer > 0.0:
                 self.cooldown_timer -= dt
                 self.status = "cooling down"
             else:
-                # Scale down gradually (1 pod at a time every 4s)
                 self.replicas = max(self.min_pods, self.replicas - 1)
                 self.ready_pods = min(self.ready_pods, self.replicas)
-                self.cooldown_timer = 4.0
+                self.cooldown_timer = 2.0
                 self.status = "scaling in"
         else:
             if self.cooldown_timer > 0.0:
                 self.cooldown_timer -= dt
             if self.starting_pods == 0:
-                self.status = "stable"
+                self.status = "scaled" if self.replicas > self.min_pods else "stable"
 
         # Advance startup of starting pods
         if self.starting_pods > 0:
@@ -89,7 +167,7 @@ class ClusterModel:
                 self.ready_pods = min(self.replicas, self.ready_pods + self.starting_pods)
                 self.starting_pods = 0
                 if self.cooldown_timer <= 0.0:
-                    self.status = "stable"
+                    self.status = "scaled" if self.replicas > self.min_pods else "stable"
 
         # Compute cluster capacity and queue backlog
         cluster_capacity = self.ready_pods * self.pod_capacity_rps
@@ -122,4 +200,16 @@ class ClusterModel:
             "db_writes_per_sec": int(round(self.db_writes_per_sec)),
             "cpu_percent": self.cpu_percent,
             "status": self.status,
+            "ingest": {
+                "replicas": self.replicas,
+                "ready_pods": self.ready_pods,
+                "starting_pods": self.starting_pods,
+                "cpu_percent": self.cpu_percent,
+            },
+            "processor": {
+                "replicas": self.replicas,
+                "ready_pods": self.ready_pods,
+                "starting_pods": self.starting_pods,
+                "cpu_percent": self.cpu_percent,
+            },
         }

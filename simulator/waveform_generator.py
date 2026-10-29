@@ -37,14 +37,15 @@ class SeismicEvent:
         self.duration_s = duration_s
         self.depth_km = depth_km
 
-        # Peak ground acceleration near epicenter scales exponentially with magnitude
-        # Empirical relationship: log10(PGA) ~ 0.5 * M - 1.5
-        self.base_pga_g = min(1.5, max(0.06, 10 ** (0.45 * magnitude - 2.0)))
+        # Peak ground acceleration near epicenter scales realistically with magnitude
+        # Standard GMPE relationship: log10(PGA in g) ~ 0.5 * M - 3.45
+        # M3.8 ~ 0.03g (sub-threshold), M4.2 ~ 0.05g (local threshold), M5.5 ~ 0.20g (moderate), M7.2 ~ 1.25g (severe)
+        self.base_pga_g = min(1.8, max(0.015, 10 ** (0.50 * magnitude - 3.45)))
 
         # Seismic wave velocities (approximate crustal velocities)
         self.p_velocity_km_s = 6.0  # Compressional P-wave
         self.s_velocity_km_s = 3.5  # Shear S-wave (causes major structural damage)
-        self.attenuation_lambda = max(0.1, 0.45 - (magnitude * 0.03))  # Decay coefficient
+        self.attenuation_lambda = max(0.08, 0.35 - (magnitude * 0.02))  # Decay coefficient
 
 
 class SeismicWaveformGenerator:
@@ -109,8 +110,9 @@ class SeismicWaveformGenerator:
             t_arrival_p = active_event.start_time_s + (hypo_dist / active_event.p_velocity_km_s)
             t_arrival_s = active_event.start_time_s + (hypo_dist / active_event.s_velocity_km_s)
 
-            # Geometric spreading attenuation: amplitude ~ 1 / sqrt(distance)
-            geom_attenuation = 1.0 / math.sqrt(hypo_dist / 10.0)
+            # Geometric spreading & crustal anelastic attenuation
+            # Amplitude decays with distance: R^-1.1 * exp(-gamma * dR)
+            geom_attenuation = ((10.0 / hypo_dist) ** 1.15) * math.exp(-0.035 * max(0.0, hypo_dist - 10.0))
             local_amplitude = active_event.base_pga_g * geom_attenuation * self.soil_amplification
 
             # Mask for S-wave arrival (main shaking)

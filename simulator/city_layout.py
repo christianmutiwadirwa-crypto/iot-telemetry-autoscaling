@@ -175,10 +175,10 @@ def get_city_layout() -> Dict[str, Any]:
     parks = [
         {"id": "pk-central", "name": "Central Park", "cx": 0.0, "cy": 1.2, "w": 1.8, "h": 0.9, "rot": 0.0},
         {"id": "pk-riverside", "name": "Riverside Green", "cx": -4.0, "cy": -0.8, "w": 2.2, "h": 0.7, "rot": 0.4},
-        {"id": "pk-hillside", "name": "Hillside Nature Reserve", "cx": -7.5, "cy": 6.2, "w": 3.0, "h": 2.0, "rot": -0.2},
+        {"id": "pk-hillside", "name": "Hillside Nature Reserve", "cx": -13.0, "cy": 7.2, "w": 3.5, "h": 2.2, "rot": -0.2},
         {"id": "pk-greenbelt", "name": "Northern Greenbelt", "cx": 4.5, "cy": 8.0, "w": 4.5, "h": 1.5, "rot": 0.1},
-        {"id": "pk-transit", "name": "Meadow Parklands", "cx": 6.8, "cy": 4.2, "w": 2.0, "h": 1.2, "rot": -0.1},
-        {"id": "pk-wetlands", "name": "Port Wetlands Sanctuary", "cx": 10.5, "cy": -3.5, "w": 2.8, "h": 1.6, "rot": 0.3},
+        {"id": "pk-transit", "name": "Meadow Parklands", "cx": 11.0, "cy": 5.0, "w": 2.8, "h": 1.5, "rot": -0.1},
+        {"id": "pk-wetlands", "name": "Port Wetlands Sanctuary", "cx": 15.0, "cy": -5.0, "w": 3.2, "h": 1.8, "rot": 0.3},
         {"id": "pk-fernwood", "name": "Fernwood Preserve", "cx": -12.0, "cy": -6.5, "w": 3.5, "h": 2.2, "rot": 0.0},
     ]
 
@@ -233,7 +233,7 @@ def get_city_layout() -> Dict[str, Any]:
             "name": "Port Access Expressway",
             "type": "arterial",
             "lanes": 4,
-            "points": [(1.1, -4.2), (4.5, -4.8), (7.0, -5.0), (10.0, -5.5), (14.0, -5.0)],
+            "points": [(1.1, -4.2), (4.5, -4.8), (8.0, -5.2), (11.0, -5.8), (13.5, -6.5), (16.5, -6.0)],
         },
         # Residential Hills Access
         {
@@ -241,7 +241,7 @@ def get_city_layout() -> Dict[str, Any]:
             "name": "Hillside Parkway",
             "type": "arterial",
             "lanes": 4,
-            "points": [(-2.5, 1.8), (-4.5, 3.2), (-6.2, 4.5), (-8.5, 5.5), (-11.0, 6.2)],
+            "points": [(-2.5, 1.8), (-5.0, 3.2), (-8.0, 4.8), (-10.5, 5.6), (-12.5, 6.0), (-15.5, 6.8)],
         },
         # Dam Access Service Road
         {
@@ -257,7 +257,7 @@ def get_city_layout() -> Dict[str, Any]:
             "name": "Metro North-East Parkway",
             "type": "arterial",
             "lanes": 4,
-            "points": [(0.8, 2.8), (3.0, 4.2), (5.5, 5.5), (8.5, 6.2), (12.0, 7.0)],
+            "points": [(0.8, 2.8), (3.5, 4.0), (6.5, 5.0), (9.0, 5.8), (11.0, 6.5), (14.0, 7.2)],
         },
         # Suburbs Link
         {
@@ -265,7 +265,7 @@ def get_city_layout() -> Dict[str, Any]:
             "name": "Southwest County Road",
             "type": "secondary",
             "lanes": 2,
-            "points": [(-1.8, -2.2), (-4.5, -3.8), (-8.2, -5.6), (-12.0, -6.8), (-16.0, -7.5)],
+            "points": [(-1.8, -2.2), (-4.5, -3.8), (-8.2, -5.6), (-11.5, -6.5), (-16.0, -7.5)],
         },
         # Rail line & Metro Spine
         {
@@ -332,25 +332,25 @@ def get_city_layout() -> Dict[str, Any]:
                         "color": "#475569" if fl < 25 else "#334155",
                     })
 
-    # Sector B: Industrial & Port Zone
-    structures.append({"id": "str-port-quay", "name": "Deepwater Cargo Quay", "sector": "B", "kind": "quay", "x": 6.8, "y": -2.2, "w": 4.5, "h": 0.4, "floors": 1, "color": "#475569"})
-    structures.append({"id": "str-yard", "name": "Metro Intermodal Container Yard", "sector": "B", "kind": "yard", "x": 8.5, "y": -3.5, "w": 2.8, "h": 1.4, "floors": 1, "color": "#334155"})
-    structures.append({"id": "str-tanks", "name": "Petrochem Strategic Tank Farm", "sector": "B", "kind": "tank_farm", "x": 9.4, "y": -7.1, "w": 2.2, "h": 1.8, "floors": 2, "color": "#64748b"})
-    structures.append({"id": "str-cool1", "name": "Power Plant Cooling Tower 1", "sector": "B", "kind": "cooling_tower", "x": 4.7, "y": -7.0, "w": 0.5, "h": 0.5, "floors": 10, "color": "#94a3b8"})
-    structures.append({"id": "str-cool2", "name": "Power Plant Cooling Tower 2", "sector": "B", "kind": "cooling_tower", "x": 5.3, "y": -7.1, "w": 0.5, "h": 0.5, "floors": 10, "color": "#94a3b8"})
-    structures.append({"id": "str-refin", "name": "Coastal Refinery Distillation Unit", "sector": "B", "kind": "factory", "x": 7.5, "y": -6.5, "w": 1.2, "h": 0.8, "floors": 4, "color": "#e2e8f0"})
-    structures.append({"id": "str-steel", "name": "Foundry & Heavy Steel Works", "sector": "B", "kind": "factory", "x": 5.8, "y": -4.8, "w": 1.4, "h": 0.9, "floors": 3, "color": "#64748b"})
-    structures.append({"id": "str-grain", "name": "Port Grain Silos", "sector": "B", "kind": "silo", "x": 5.2, "y": -3.4, "w": 0.8, "h": 0.5, "floors": 6, "color": "#cbd5e1"})
+    # Sector B: Industrial & Port Zone (centered around 13.5, -6.5)
+    structures.append({"id": "str-port-quay", "name": "Deepwater Cargo Quay", "sector": "B", "kind": "quay", "x": 13.5, "y": -2.4, "w": 5.5, "h": 0.4, "floors": 1, "color": "#475569"})
+    structures.append({"id": "str-yard", "name": "Metro Intermodal Container Yard", "sector": "B", "kind": "yard", "x": 13.5, "y": -4.2, "w": 3.2, "h": 1.6, "floors": 1, "color": "#334155"})
+    structures.append({"id": "str-tanks", "name": "Petrochem Strategic Tank Farm", "sector": "B", "kind": "tank_farm", "x": 14.8, "y": -7.5, "w": 2.4, "h": 2.0, "floors": 2, "color": "#64748b"})
+    structures.append({"id": "str-cool1", "name": "Power Plant Cooling Tower 1", "sector": "B", "kind": "cooling_tower", "x": 11.5, "y": -7.8, "w": 0.5, "h": 0.5, "floors": 10, "color": "#94a3b8"})
+    structures.append({"id": "str-cool2", "name": "Power Plant Cooling Tower 2", "sector": "B", "kind": "cooling_tower", "x": 12.1, "y": -7.9, "w": 0.5, "h": 0.5, "floors": 10, "color": "#94a3b8"})
+    structures.append({"id": "str-refin", "name": "Coastal Refinery Distillation Unit", "sector": "B", "kind": "factory", "x": 13.8, "y": -7.2, "w": 1.5, "h": 1.0, "floors": 4, "color": "#e2e8f0"})
+    structures.append({"id": "str-steel", "name": "Foundry & Heavy Steel Works", "sector": "B", "kind": "factory", "x": 12.0, "y": -5.6, "w": 1.6, "h": 1.0, "floors": 3, "color": "#64748b"})
+    structures.append({"id": "str-grain", "name": "Port Grain Silos", "sector": "B", "kind": "silo", "x": 11.2, "y": -3.8, "w": 1.0, "h": 0.6, "floors": 6, "color": "#cbd5e1"})
 
     # Industrial cranes along quay
-    for c_i, cx in enumerate([5.0, 5.8, 6.5, 7.2, 7.9, 8.6, 9.3, 10.0]):
+    for c_i, cx in enumerate([11.5, 12.2, 12.9, 13.6, 14.3, 15.0, 15.7, 16.4]):
         structures.append({
             "id": f"str-crane-{c_i+1}",
             "name": f"Gantry Crane #{c_i+1}",
             "sector": "B",
             "kind": "crane",
             "x": cx,
-            "y": -2.0,
+            "y": -2.2,
             "w": 0.15,
             "h": 0.18,
             "floors": 8,
@@ -359,8 +359,8 @@ def get_city_layout() -> Dict[str, Any]:
 
     # Industrial warehouses
     for w_i in range(16):
-        wx = 6.2 + (w_i % 4) * 1.0 + rng.uniform(-0.15, 0.15)
-        wy = -4.2 - (w_i // 4) * 0.9 + rng.uniform(-0.1, 0.1)
+        wx = 12.0 + (w_i % 4) * 1.1 + rng.uniform(-0.15, 0.15)
+        wy = -5.0 - (w_i // 4) * 0.9 + rng.uniform(-0.1, 0.1)
         structures.append({
             "id": f"str-wh-{w_i+1}",
             "name": f"Logistics Warehouse B-{w_i+1:02d}",
@@ -374,15 +374,15 @@ def get_city_layout() -> Dict[str, Any]:
             "color": "#475569",
         })
 
-    # Sector C: Residential Hills
-    structures.append({"id": "str-hosp", "name": "Kelvin Memorial Hospital", "sector": "C", "kind": "hospital", "x": -5.5, "y": 3.8, "w": 0.8, "h": 0.6, "floors": 8, "color": "#ef4444"})
-    structures.append({"id": "str-univ", "name": "Hillside Science Institute & School", "sector": "C", "kind": "school", "x": -6.8, "y": 5.2, "w": 0.9, "h": 0.7, "floors": 4, "color": "#3b82f6"})
-    structures.append({"id": "str-obs", "name": "Mount Kelvin Seismic Observatory", "sector": "C", "kind": "observatory", "x": -8.5, "y": 6.8, "w": 0.4, "h": 0.4, "floors": 3, "color": "#10b981"})
+    # Sector C: Residential Hills (centered around -12.5, 6.0)
+    structures.append({"id": "str-hosp", "name": "Kelvin Memorial Hospital", "sector": "C", "kind": "hospital", "x": -11.5, "y": 5.5, "w": 0.8, "h": 0.6, "floors": 8, "color": "#ef4444"})
+    structures.append({"id": "str-univ", "name": "Hillside Science Institute & School", "sector": "C", "kind": "school", "x": -13.0, "y": 7.0, "w": 0.9, "h": 0.7, "floors": 4, "color": "#3b82f6"})
+    structures.append({"id": "str-obs", "name": "Mount Kelvin Seismic Observatory", "sector": "C", "kind": "observatory", "x": -14.8, "y": 8.5, "w": 0.5, "h": 0.5, "floors": 3, "color": "#10b981"})
 
     # Residential clusters in C
     for h_i in range(24):
-        hx = -6.2 + rng.uniform(-3.0, 3.0)
-        hy = 4.5 + rng.uniform(-2.8, 2.5)
+        hx = -12.5 + rng.uniform(-3.0, 3.0)
+        hy = 6.0 + rng.uniform(-2.8, 2.5)
         if not is_water(hx, hy, river_points, river_width + 0.3):
             structures.append({
                 "id": f"str-res-{h_i+1}",
@@ -397,16 +397,16 @@ def get_city_layout() -> Dict[str, Any]:
                 "color": "#64748b",
             })
 
-    # Sector D: Transit & Infrastructure Corridor
-    structures.append({"id": "str-mall", "name": "Meadow Center Mega Mall", "sector": "D", "kind": "mall", "x": 4.9, "y": 3.6, "w": 1.5, "h": 1.0, "floors": 4, "color": "#ec4899"})
-    structures.append({"id": "str-arena", "name": "Kelvin Olympic Arena & Stadium", "sector": "D", "kind": "stadium", "x": 7.6, "y": 3.5, "w": 1.3, "h": 1.1, "floors": 5, "color": "#8b5cf6"})
-    structures.append({"id": "str-thub", "name": "Metropolitan Intermodal Transit Hub", "sector": "D", "kind": "transit_hub", "x": 5.62, "y": 6.12, "w": 0.9, "h": 0.6, "floors": 5, "color": "#06b6d4"})
-    structures.append({"id": "str-retail", "name": "North Meadow Commercial Park", "sector": "D", "kind": "retail_park", "x": 8.6, "y": 4.7, "w": 1.2, "h": 0.7, "floors": 3, "color": "#f97316"})
+    # Sector D: Transit & Infrastructure Corridor (centered around 11.0, 6.5)
+    structures.append({"id": "str-mall", "name": "Meadow Center Mega Mall", "sector": "D", "kind": "mall", "x": 9.8, "y": 5.5, "w": 1.6, "h": 1.1, "floors": 4, "color": "#ec4899"})
+    structures.append({"id": "str-arena", "name": "Kelvin Olympic Arena & Stadium", "sector": "D", "kind": "stadium", "x": 12.2, "y": 5.8, "w": 1.4, "h": 1.2, "floors": 5, "color": "#8b5cf6"})
+    structures.append({"id": "str-thub", "name": "Metropolitan Intermodal Transit Hub", "sector": "D", "kind": "transit_hub", "x": 11.0, "y": 7.2, "w": 1.0, "h": 0.7, "floors": 5, "color": "#06b6d4"})
+    structures.append({"id": "str-retail", "name": "North Meadow Commercial Park", "sector": "D", "kind": "retail_park", "x": 12.8, "y": 7.5, "w": 1.3, "h": 0.8, "floors": 3, "color": "#f97316"})
 
     # Sector D office parks & commercial facilities
     for d_i in range(14):
-        dx = 5.5 + rng.uniform(-2.5, 2.8)
-        dy = 5.5 + rng.uniform(-2.5, 2.5)
+        dx = 11.0 + rng.uniform(-2.5, 2.5)
+        dy = 6.5 + rng.uniform(-2.2, 2.2)
         structures.append({
             "id": f"str-comm-d-{d_i+1}",
             "name": f"Commerce Park Office D-{d_i+1:02d}",
@@ -420,15 +420,15 @@ def get_city_layout() -> Dict[str, Any]:
             "color": "#334155",
         })
 
-    # Sector E: Outlying Suburban Ring
-    structures.append({"id": "str-subst", "name": "Regional 500kV Electrical Substation", "sector": "E", "kind": "substation", "x": -6.5, "y": -6.2, "w": 0.8, "h": 0.6, "floors": 2, "color": "#eab308"})
-    structures.append({"id": "str-wtower", "name": "Municipal Water Storage Tower", "sector": "E", "kind": "water_tower", "x": -9.5, "y": -4.2, "w": 0.35, "h": 0.35, "floors": 8, "color": "#38bdf8"})
-    structures.append({"id": "str-grain-e", "name": "Valley Agricultural Silo Complex", "sector": "E", "kind": "silo", "x": -11.5, "y": -6.8, "w": 0.9, "h": 0.6, "floors": 4, "color": "#a8a29e"})
+    # Sector E: Outlying Suburban Ring (centered around -11.5, -6.5)
+    structures.append({"id": "str-subst", "name": "Regional 500kV Electrical Substation", "sector": "E", "kind": "substation", "x": -10.5, "y": -6.5, "w": 0.9, "h": 0.7, "floors": 2, "color": "#eab308"})
+    structures.append({"id": "str-wtower", "name": "Municipal Water Storage Tower", "sector": "E", "kind": "water_tower", "x": -12.5, "y": -5.0, "w": 0.4, "h": 0.4, "floors": 8, "color": "#38bdf8"})
+    structures.append({"id": "str-grain-e", "name": "Valley Agricultural Silo Complex", "sector": "E", "kind": "silo", "x": -13.5, "y": -7.5, "w": 1.0, "h": 0.7, "floors": 4, "color": "#a8a29e"})
 
     # Suburb residential clusters & farms in E
     for e_i in range(18):
-        ex = -8.2 + rng.uniform(-3.5, 3.5)
-        ey = -5.6 + rng.uniform(-3.0, 3.0)
+        ex = -11.5 + rng.uniform(-3.0, 3.0)
+        ey = -6.5 + rng.uniform(-2.8, 2.8)
         if not is_water(ex, ey, river_points, river_width + 0.3):
             structures.append({
                 "id": f"str-suburb-{e_i+1}",
@@ -456,16 +456,16 @@ def get_city_layout() -> Dict[str, Any]:
 
     # Trees along hills (Sector C)
     for _ in range(400):
-        tx = -6.2 + rng.gauss(0, 2.2)
-        ty = 4.5 + rng.gauss(0, 2.0)
-        if -16.0 <= tx <= 0.0 and 1.5 <= ty <= 10.0 and not is_water(tx, ty, river_points, river_width):
+        tx = -12.5 + rng.gauss(0, 2.2)
+        ty = 6.0 + rng.gauss(0, 2.0)
+        if -17.5 <= tx <= -7.0 and 2.0 <= ty <= 11.0 and not is_water(tx, ty, river_points, river_width):
             trees.append([round(tx, 3), round(ty, 3), round(rng.uniform(0.04, 0.09), 3)])
 
     # Trees in suburban outskirts (Sector E)
     for _ in range(350):
-        tx = -8.2 + rng.gauss(0, 2.5)
-        ty = -5.6 + rng.gauss(0, 2.2)
-        if -16.0 <= tx <= -2.0 and -11.0 <= ty <= -2.0 and not is_water(tx, ty, river_points, river_width):
+        tx = -11.5 + rng.gauss(0, 2.5)
+        ty = -6.5 + rng.gauss(0, 2.2)
+        if -17.5 <= tx <= -5.0 and -11.0 <= ty <= -2.0 and not is_water(tx, ty, river_points, river_width):
             trees.append([round(tx, 3), round(ty, 3), round(rng.uniform(0.04, 0.08), 3)])
 
     # Prominent HUD Labels for landmarks
@@ -479,17 +479,17 @@ def get_city_layout() -> Dict[str, Any]:
         {"text": "Central Railway Terminal", "x": 0.3, "y": 0.95, "minZoom": 2.2, "maxZoom": 14.0, "kind": "landmark"},
         {"text": "Kelvin Financial Tower (72F)", "x": 0.0, "y": -0.35, "minZoom": 2.2, "maxZoom": 14.0, "kind": "landmark"},
         {"text": "Central Park", "x": 0.0, "y": 1.2, "minZoom": 1.2, "maxZoom": 6.0, "kind": "park"},
-        {"text": "Sector B: Industrial Port", "x": 7.0, "y": -7.6, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
-        {"text": "Cargo Quays & Cranes", "x": 7.5, "y": -2.6, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
-        {"text": "Petrochem Tank Farm", "x": 9.4, "y": -6.8, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
-        {"text": "Sector C: Residential Hills", "x": -6.2, "y": 7.2, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
-        {"text": "Kelvin Memorial Hospital", "x": -5.5, "y": 4.4, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
-        {"text": "Sector D: Transit Corridor", "x": 5.5, "y": 7.8, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
-        {"text": "Meadow Center Mall", "x": 4.9, "y": 4.4, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
-        {"text": "Kelvin Olympic Arena", "x": 7.6, "y": 4.3, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
-        {"text": "Transit Hub", "x": 5.62, "y": 6.6, "minZoom": 2.0, "maxZoom": 14.0, "kind": "landmark"},
-        {"text": "Sector E: Suburban Ring", "x": -8.2, "y": -8.8, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
-        {"text": "500kV Substation", "x": -6.5, "y": -5.6, "minZoom": 2.0, "maxZoom": 14.0, "kind": "landmark"},
+        {"text": "Sector B: Industrial Port", "x": 13.5, "y": -9.0, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
+        {"text": "Cargo Quays & Cranes", "x": 13.5, "y": -2.8, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
+        {"text": "Petrochem Tank Farm", "x": 14.8, "y": -7.2, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
+        {"text": "Sector C: Residential Hills", "x": -12.5, "y": 9.0, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
+        {"text": "Kelvin Memorial Hospital", "x": -11.5, "y": 6.2, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
+        {"text": "Sector D: Transit Corridor", "x": 11.0, "y": 9.0, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
+        {"text": "Meadow Center Mall", "x": 9.8, "y": 6.2, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
+        {"text": "Kelvin Olympic Arena", "x": 12.2, "y": 6.6, "minZoom": 1.8, "maxZoom": 14.0, "kind": "landmark"},
+        {"text": "Transit Hub", "x": 11.0, "y": 7.8, "minZoom": 2.0, "maxZoom": 14.0, "kind": "landmark"},
+        {"text": "Sector E: Suburban Ring", "x": -11.5, "y": -9.0, "minZoom": 0.7, "maxZoom": 3.5, "kind": "sector"},
+        {"text": "500kV Substation", "x": -10.5, "y": -5.8, "minZoom": 2.0, "maxZoom": 14.0, "kind": "landmark"},
     ]
 
     # Exactly 500 sensors (100 per sector) distributed realistically on infrastructure and buildings
@@ -560,10 +560,10 @@ def get_city_layout() -> Dict[str, Any]:
 
     # --- Sector B Anchors (Industrial & Port Zone) ---
     anchors_b = []
-    # Harbour bridge pier
+    # Harbour bridge pier & tank farm
     anchors_b.append({"x": bridges[4]["x1"], "y": bridges[4]["y1"], "kind": "bridge", "site": "Harbour Gate Pier"})
-    anchors_b.append({"x": bridges[4]["x2"], "y": bridges[4]["y2"], "kind": "bridge", "site": "Harbour Gate Pier South"})
-    # Gantry cranes & tanks
+    anchors_b.append({"x": 13.5, "y": -2.4, "kind": "quay", "site": "Deepwater Cargo Quay North"})
+    anchors_b.append({"x": 14.8, "y": -7.5, "kind": "tank_farm", "site": "Petrochem Tank Farm Base"})
     b_structures = [s for s in structures if s.get("sector") == "B"]
     sensors_b = build_sector_sensors("B", 100, anchors_b, b_structures, SECTOR_INFO["B"]["center_coords"], SECTOR_INFO["B"]["radius_km"])
 
@@ -582,18 +582,18 @@ def get_city_layout() -> Dict[str, Any]:
 
     # --- Sector D Anchors (Transit & Infrastructure Corridor) ---
     anchors_d = []
-    # Highway overpasses & rail bridges
-    anchors_d.append({"x": 5.62, "y": 6.12, "kind": "transit_hub", "site": "Metro Intermodal Terminal"})
-    anchors_d.append({"x": 4.9, "y": 3.6, "kind": "building", "site": "Meadow Center Mall Roof"})
-    anchors_d.append({"x": 7.6, "y": 3.5, "kind": "infrastructure", "site": "Kelvin Olympic Arena Dome"})
+    # Highway overpasses & rail bridges & mall
+    anchors_d.append({"x": 11.0, "y": 7.2, "kind": "transit_hub", "site": "Metro Intermodal Terminal"})
+    anchors_d.append({"x": 9.8, "y": 5.5, "kind": "building", "site": "Meadow Center Mall Roof"})
+    anchors_d.append({"x": 12.2, "y": 5.8, "kind": "infrastructure", "site": "Kelvin Olympic Arena Dome"})
     d_structures = [s for s in structures if s.get("sector") == "D"]
     sensors_d = build_sector_sensors("D", 100, anchors_d, d_structures, SECTOR_INFO["D"]["center_coords"], SECTOR_INFO["D"]["radius_km"])
 
     # --- Sector E Anchors (Suburban Ring) ---
     anchors_e = []
-    anchors_e.append({"x": -6.5, "y": -6.2, "kind": "substation", "site": "500kV Substation Transformer Yard"})
-    anchors_e.append({"x": -9.5, "y": -4.2, "kind": "water_tower", "site": "Water Tower Structural Base"})
-    anchors_e.append({"x": bridges[1]["x2"], "y": bridges[1]["y2"], "kind": "bridge", "site": "Old Town Bridge South Pier"})
+    anchors_e.append({"x": -10.5, "y": -6.5, "kind": "substation", "site": "500kV Substation Transformer Yard"})
+    anchors_e.append({"x": -12.5, "y": -5.0, "kind": "water_tower", "site": "Water Tower Structural Base"})
+    anchors_e.append({"x": -13.5, "y": -7.5, "kind": "silo", "site": "Agricultural Silo Complex Pier"})
     e_structures = [s for s in structures if s.get("sector") == "E"]
     sensors_e = build_sector_sensors("E", 100, anchors_e, e_structures, SECTOR_INFO["E"]["center_coords"], SECTOR_INFO["E"]["radius_km"])
 

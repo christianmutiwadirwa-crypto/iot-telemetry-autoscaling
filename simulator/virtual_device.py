@@ -139,8 +139,11 @@ class VirtualSensorNode:
             active_event=active_event,
         )
 
-        # Trigger threshold check
-        self.is_triggered = peak_g >= SEISMIC_TRIGGER_THRESHOLD_G
+        # Keep node triggered throughout active seismic event duration
+        if active_event is not None and sim_time_s <= (active_event.start_time_s + active_event.duration_s + 2.0):
+            self.is_triggered = True
+        else:
+            self.is_triggered = False
 
         samples = self.generator.format_waveform_samples(x, y, z)
         waveform = WaveformData(

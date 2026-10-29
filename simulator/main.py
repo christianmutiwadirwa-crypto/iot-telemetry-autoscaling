@@ -94,6 +94,9 @@ async def run_simulator(args):
     # 4. Background websocket broadcaster
     broadcast_task = asyncio.create_task(server.broadcast_telemetry_loop())
 
+    # 5. Background AKS live telemetry sync task
+    aks_sync_task = asyncio.create_task(server.sync_live_aks_loop())
+
     if args.auto_run_scenario:
         controller.start()
 
