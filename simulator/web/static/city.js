@@ -711,7 +711,7 @@ class MetroMap {
         const epicenter = ev.epicenter || [0, 0];
         const sc = this.worldToScreen(epicenter[0], epicenter[1]);
         const scale = this.getKmToPixelRatio();
-        const duration = ev.duration_s || 90.0;
+        const duration = ev.duration_s || 300.0;
 
         // Smooth interpolated simulation time
         const dtSinceSnap = this.lastSnapshotPerfTime ? (performance.now() - this.lastSnapshotPerfTime) / 1000.0 : 0.0;
